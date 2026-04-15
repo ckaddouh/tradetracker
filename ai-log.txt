@@ -1,0 +1,3 @@
+Used AI for the brainstorming stage, documented in BRAINSTORM.md. 
+
+Used AI's responses from BRAINSTORM.md to craft my brief in BRIEF.md. 
