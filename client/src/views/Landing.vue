@@ -1,82 +1,89 @@
 <template>
   <div class="landing">
-    <div class="noise" aria-hidden="true"></div>
 
-    <header class="topbar">
-      <span class="logo">TradeTrackr</span>
-      <div class="topbar-actions" v-if="!mode">
-        <button class="btn-link" @click="mode = 'login'">Log in</button>
-        <button class="btn-cta" @click="mode = 'register'">Get started →</button>
+    <!-- top bar -->
+    <header class="lnav">
+      <span class="lnav-brand">TradeTrackr</span>
+      <div v-if="!mode" class="lnav-actions">
+        <button class="btn btn-ghost" @click="mode='login'">Log in</button>
+        <button class="btn btn-primary" @click="mode='register'">Get started</button>
       </div>
     </header>
 
-    <main class="hero" v-if="!mode">
-      <div class="eyebrow">Paper trading · trade journaling · performance analytics</div>
-      <h1 class="hero-title">
-        Your edge starts<br/>
-        <span class="accent-text">with the data.</span>
-      </h1>
-      <p class="hero-desc">
-        Log your trade theses, track your positions, and measure conviction
-        against outcomes — all in one place.
-      </p>
-      <button class="btn-hero" @click="mode = 'register'">Start for free →</button>
+    <!-- hero -->
+    <main v-if="!mode" class="hero">
+      <p class="hero-eyebrow">Paper trading · Trade journaling · P&amp;L analytics</p>
+      <h1 class="hero-h1">Track every thesis.<br><span class="accent">Measure every outcome.</span></h1>
+      <p class="hero-body">Log trade ideas, set conviction levels, and see whether your edge is real — all in a clean, data-first journal.</p>
+      <div class="hero-btns">
+        <button class="btn btn-primary hero-cta" @click="mode='register'">Create free account</button>
+        <button class="btn btn-ghost" @click="mode='login'">Sign in</button>
+      </div>
 
-      <div class="deco-cards" aria-hidden="true">
-        <div class="deco-card deco-card--1">
-          <span class="dc-ticker">NVDA</span>
-          <span class="dc-dir bullish">LONG</span>
-          <span class="dc-pnl pos">+$1,284</span>
+      <!-- mock data cards -->
+      <div class="cards" aria-hidden="true">
+        <div class="mock-card">
+          <div class="mc-row">
+            <span class="mc-ticker">NVDA</span>
+            <span class="mc-tag mc-bull">LONG</span>
+          </div>
+          <div class="mc-title">AI capex cycle underpriced</div>
+          <div class="mc-pnl pos">+$1,284.50</div>
         </div>
-        <div class="deco-card deco-card--2">
-          <span class="dc-ticker">TSLA</span>
-          <span class="dc-dir bearish">SHORT</span>
-          <span class="dc-pnl neg">−$342</span>
+        <div class="mock-card mock-card--dim">
+          <div class="mc-row">
+            <span class="mc-ticker">TSLA</span>
+            <span class="mc-tag mc-bear">SHORT</span>
+          </div>
+          <div class="mc-title">Margins compressing on EV price war</div>
+          <div class="mc-pnl neg">−$342.00</div>
         </div>
-        <div class="deco-card deco-card--3">
-          <span class="dc-label">Win rate</span>
-          <span class="dc-big">67%</span>
+        <div class="mock-stat-card">
+          <div class="msc-label">Win rate</div>
+          <div class="msc-val">67%</div>
+          <div class="msc-sub">12 closed trades</div>
         </div>
       </div>
     </main>
 
-    <div class="auth-wrap" v-else>
-      <div class="auth-card">
-        <button class="back-link" @click="mode = null">← Back</button>
+    <!-- auth form -->
+    <div v-else class="auth-shell">
+      <div class="auth-box">
+        <button class="auth-back" @click="mode=null">← Back</button>
         <h2 class="auth-title">{{ mode === 'login' ? 'Welcome back' : 'Create account' }}</h2>
-        <p class="auth-sub">{{ mode === 'login' ? 'Log in to your account' : 'Start tracking your trades today' }}</p>
 
         <div class="auth-tabs">
-          <button :class="['tab', mode === 'register' && 'tab--active']" @click="mode = 'register'">Register</button>
-          <button :class="['tab', mode === 'login' && 'tab--active']" @click="mode = 'login'">Login</button>
+          <button :class="['atab', mode==='register' && 'atab--on']" @click="mode='register'">Register</button>
+          <button :class="['atab', mode==='login'    && 'atab--on']" @click="mode='login'">Log in</button>
         </div>
 
         <form @submit.prevent="submit" class="auth-form">
-          <div v-if="mode === 'register'" class="field">
+          <div v-if="mode==='register'" class="form-group">
             <label>Name</label>
             <input v-model="form.name" type="text" placeholder="Your name" required />
           </div>
-          <div class="field">
+          <div class="form-group">
             <label>Email</label>
             <input v-model="form.email" type="email" placeholder="you@example.com" required />
           </div>
-          <div class="field">
+          <div class="form-group">
             <label>Password</label>
             <input v-model="form.password" type="password" placeholder="••••••••" required />
           </div>
-          <p v-if="error" class="error-msg">{{ error }}</p>
-          <button class="btn-submit" type="submit" :disabled="loading">
+          <p v-if="error" class="form-error">{{ error }}</p>
+          <button class="btn btn-primary auth-submit" type="submit" :disabled="loading">
             {{ loading ? 'Please wait…' : (mode === 'login' ? 'Log in' : 'Create account') }}
           </button>
         </form>
       </div>
     </div>
 
+    <!-- ticker tape -->
     <div class="tape" aria-hidden="true">
-      <div class="tape-track">
-        <span v-for="t in [...tickers, ...tickers]" :key="t.sym + t.val" class="tape-item">
-          <span class="tape-sym">{{ t.sym }}</span>
-          <span :class="t.up ? 'pos' : 'neg'">{{ t.up ? '+' : '' }}{{ t.val }}%</span>
+      <div class="tape-inner">
+        <span v-for="t in tape" :key="t.s+t.v" class="tape-item">
+          <span class="tape-sym">{{ t.s }}</span>
+          <span :class="t.up ? 'pos' : 'neg'">{{ t.up ? '+' : '' }}{{ t.v }}%</span>
         </span>
       </div>
     </div>
@@ -86,50 +93,36 @@
 <script>
 import { useAuthStore } from '../stores/auth'
 import { useRouter } from 'vue-router'
-
 export default {
   name: 'Landing',
   setup() {
-    const auth = useAuthStore()
-    const router = useRouter()
-    return { auth, router }
+    return { auth: useAuthStore(), router: useRouter() }
   },
   data() {
     return {
-      mode: null,
-      loading: false,
-      error: null,
+      mode: null, loading: false, error: null,
       form: { name: '', email: '', password: '' },
-      tickers: [
-        { sym: 'AAPL', val: '2.14', up: true },
-        { sym: 'NVDA', val: '-1.08', up: false },
-        { sym: 'TSLA', val: '5.32', up: true },
-        { sym: 'MSFT', val: '0.87', up: true },
-        { sym: 'META', val: '-0.45', up: false },
-        { sym: 'AMZN', val: '1.22', up: true },
-        { sym: 'GOOG', val: '-2.01', up: false },
-        { sym: 'SPY',  val: '0.53', up: true },
-        { sym: 'QQQ',  val: '0.91', up: true },
-        { sym: 'BLK',  val: '1.67', up: true },
+      tape: [
+        {s:'AAPL',v:'2.14',up:true},{s:'NVDA',v:'-1.08',up:false},
+        {s:'TSLA',v:'5.32',up:true},{s:'MSFT',v:'0.87',up:true},
+        {s:'META',v:'-0.45',up:false},{s:'AMZN',v:'1.22',up:true},
+        {s:'GOOG',v:'-2.01',up:false},{s:'SPY',v:'0.53',up:true},
+        {s:'QQQ',v:'0.91',up:true},{s:'BLK',v:'1.67',up:true},
+        {s:'AAPL',v:'2.14',up:true},{s:'NVDA',v:'-1.08',up:false},
+        {s:'TSLA',v:'5.32',up:true},{s:'MSFT',v:'0.87',up:true},
+        {s:'META',v:'-0.45',up:false},{s:'AMZN',v:'1.22',up:true},
       ],
     }
   },
   methods: {
     async submit() {
-      this.error = null
-      this.loading = true
+      this.error = null; this.loading = true
       try {
-        if (this.mode === 'login') {
-          await this.auth.login(this.form.email, this.form.password)
-        } else {
-          await this.auth.register(this.form.email, this.form.password, this.form.name)
-        }
+        if (this.mode === 'login') await this.auth.login(this.form.email, this.form.password)
+        else await this.auth.register(this.form.email, this.form.password, this.form.name)
         this.router.push('/journal')
-      } catch (e) {
-        this.error = e.message
-      } finally {
-        this.loading = false
-      }
+      } catch(e) { this.error = e.message }
+      finally { this.loading = false }
     },
   },
 }
@@ -138,160 +131,159 @@ export default {
 <style scoped>
 .landing {
   min-height: 100vh;
-  background: var(--bg);
   display: flex;
   flex-direction: column;
-  position: relative;
+  background: var(--bg);
   overflow: hidden;
 }
-.noise {
-  position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: 0.03;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  background-size: 200px;
-}
-.topbar {
-  position: relative; z-index: 10;
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 20px 48px;
+
+/* nav */
+.lnav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--page-pad);
+  height: 56px;
   border-bottom: 1px solid var(--border);
+  max-width: 100%;
 }
-.logo { font-weight: 800; font-size: 1rem; letter-spacing: -0.02em; color: var(--accent); }
-.topbar-actions { display: flex; align-items: center; gap: 8px; }
-.btn-link {
-  background: none; border: none; color: var(--muted);
-  font-family: var(--font-sans); font-size: 0.875rem; font-weight: 600;
-  cursor: pointer; padding: 8px 16px; border-radius: var(--radius); transition: color 0.15s;
-}
-.btn-link:hover { color: var(--text); }
-.btn-cta {
-  background: var(--accent); color: #0f0f0f; border: none;
-  font-family: var(--font-sans); font-size: 0.875rem; font-weight: 700;
-  cursor: pointer; padding: 9px 18px; border-radius: var(--radius); transition: background 0.15s;
-}
-.btn-cta:hover { background: #d4f554; }
+.lnav-brand { font-family: var(--mono); font-size: 0.82rem; color: var(--accent); letter-spacing: 0.02em; }
+.lnav-actions { display: flex; gap: 8px; align-items: center; }
 
+/* hero */
 .hero {
-  position: relative; z-index: 1; flex: 1;
-  display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
-  padding: 80px 48px 140px;
-  max-width: 1100px; margin: 0 auto; width: 100%;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 72px var(--page-pad) 100px;
+  max-width: 700px;
+  margin: 0 auto;
+  width: 100%;
 }
-.eyebrow {
-  font-family: var(--font-mono); font-size: 0.72rem; color: var(--accent);
-  text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 24px;
+.hero-eyebrow {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 20px;
 }
-.hero-title {
-  font-size: clamp(3rem, 7vw, 5.5rem); font-weight: 800;
-  letter-spacing: -0.04em; line-height: 1.05; margin-bottom: 24px; color: var(--text);
+.hero-h1 {
+  font-size: clamp(2rem, 5vw, 3.4rem);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+  margin-bottom: 20px;
 }
-.accent-text { color: var(--accent); }
-.hero-desc {
-  color: var(--muted); font-size: 1.05rem; line-height: 1.65;
-  max-width: 460px; margin-bottom: 40px;
+.accent { color: var(--accent); }
+.hero-body {
+  color: var(--muted2);
+  font-size: 1rem;
+  line-height: 1.65;
+  max-width: 460px;
+  margin-bottom: 32px;
 }
-.btn-hero {
-  background: var(--text); color: var(--bg); border: none;
-  font-family: var(--font-sans); font-size: 1rem; font-weight: 700;
-  cursor: pointer; padding: 14px 28px; border-radius: var(--radius);
-  transition: background 0.15s, transform 0.1s;
-}
-.btn-hero:hover { background: #fff; transform: translateY(-1px); }
+.hero-btns { display: flex; gap: 10px; margin-bottom: 56px; flex-wrap: wrap; justify-content: center; }
+.hero-cta { padding: 10px 22px; font-size: 0.9rem; }
 
-.deco-cards {
-  position: absolute; right: 48px; top: 50%; transform: translateY(-50%);
-  display: flex; flex-direction: column; gap: 14px;
+/* mock cards */
+.cards {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
-.deco-card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius-lg); padding: 16px 20px;
-  display: flex; align-items: center; gap: 14px;
-  animation: float 6s ease-in-out infinite; min-width: 210px;
+.mock-card {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: var(--r-lg);
+  padding: 16px 18px;
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  animation: floatA 5s ease-in-out infinite;
 }
-.deco-card--1 { animation-delay: 0s; }
-.deco-card--2 { animation-delay: 1.8s; }
-.deco-card--3 { animation-delay: 3.4s; flex-direction: column; align-items: flex-start; gap: 4px; }
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50%       { transform: translateY(-10px); }
+.mock-card--dim { animation-name: floatB; animation-delay: 1.2s; opacity: 0.75; }
+.mock-stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: var(--r-lg);
+  padding: 16px 18px;
+  width: 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  animation: floatC 5s ease-in-out infinite;
+  animation-delay: 2.4s;
 }
-.dc-ticker { font-family: var(--font-mono); font-size: 0.95rem; font-weight: 500; color: var(--text); }
-.dc-dir { font-family: var(--font-mono); font-size: 0.68rem; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
-.dc-dir.bullish { background: rgba(74,222,128,0.12); color: var(--bullish); }
-.dc-dir.bearish { background: rgba(248,113,113,0.12); color: var(--bearish); }
-.dc-pnl { font-family: var(--font-mono); font-size: 0.9rem; margin-left: auto; }
-.dc-label { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
-.dc-big { font-family: var(--font-mono); font-size: 1.8rem; font-weight: 500; color: var(--accent); }
-.pos { color: var(--bullish); font-family: var(--font-mono); }
-.neg { color: var(--bearish); font-family: var(--font-mono); }
+@keyframes floatA { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-7px)} }
+@keyframes floatB { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
+@keyframes floatC { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-9px)} }
+.mc-row { display: flex; align-items: center; gap: 8px; }
+.mc-ticker { font-family: var(--mono); font-size: 0.88rem; font-weight: 500; }
+.mc-tag { font-family: var(--mono); font-size: 0.62rem; font-weight: 600; padding: 2px 7px; border-radius: 3px; text-transform: uppercase; }
+.mc-bull { background: rgba(61,220,132,0.12); color: var(--green); }
+.mc-bear { background: rgba(255,107,107,0.12); color: var(--red); }
+.mc-title { font-size: 0.78rem; color: var(--muted2); line-height: 1.4; }
+.mc-pnl { font-family: var(--mono); font-size: 0.9rem; font-weight: 500; margin-top: 2px; }
+.msc-label { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+.msc-val { font-family: var(--mono); font-size: 1.9rem; font-weight: 400; color: var(--accent); line-height: 1.1; }
+.msc-sub { font-family: var(--mono); font-size: 0.65rem; color: var(--muted); }
 
-.auth-wrap {
-  flex: 1; display: flex; align-items: center; justify-content: center;
-  padding: 48px 24px 120px; position: relative; z-index: 1;
+.pos { color: var(--green); font-family: var(--mono); }
+.neg { color: var(--red);   font-family: var(--mono); }
+
+/* auth */
+.auth-shell {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px var(--page-pad) 100px;
 }
-.auth-card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius-lg); padding: 36px 32px;
-  width: 100%; max-width: 420px;
-  animation: fadeUp 0.28s ease;
+.auth-box {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: var(--r-lg);
+  padding: 28px 24px;
+  width: 100%;
+  max-width: 380px;
+  animation: fadeUp 0.22s ease;
 }
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
+@keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+.auth-back {
+  background: none; border: none; color: var(--muted); font-family: var(--sans);
+  font-size: 0.78rem; cursor: pointer; padding: 0; margin-bottom: 18px; display: block;
+  transition: color 0.12s;
 }
-.back-link {
-  background: none; border: none; color: var(--muted);
-  font-family: var(--font-sans); font-size: 0.8rem; cursor: pointer;
-  padding: 0; margin-bottom: 24px; display: block; transition: color 0.15s;
-}
-.back-link:hover { color: var(--text); }
-.auth-title { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 6px; }
-.auth-sub { color: var(--muted); font-size: 0.875rem; margin-bottom: 28px; }
-.auth-tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 28px; }
-.tab {
+.auth-back:hover { color: var(--text); }
+.auth-title { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 18px; }
+.auth-tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+.atab {
   flex: 1; background: none; border: none; border-bottom: 2px solid transparent;
-  color: var(--muted); font-family: var(--font-sans); font-size: 0.875rem; font-weight: 600;
-  cursor: pointer; padding: 10px; margin-bottom: -1px; transition: all 0.15s;
+  color: var(--muted); font-family: var(--sans); font-size: 0.82rem; font-weight: 600;
+  cursor: pointer; padding: 8px; margin-bottom: -1px; transition: all 0.12s;
 }
-.tab--active { color: var(--text); border-bottom-color: var(--accent); }
-.auth-form { display: flex; flex-direction: column; gap: 18px; }
-.field { display: flex; flex-direction: column; gap: 7px; }
-.field label { font-size: 0.78rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; }
-.field input {
-  background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius);
-  color: var(--text); font-family: var(--font-sans); font-size: 0.9rem;
-  padding: 11px 14px; width: 100%; transition: border-color 0.15s; outline: none;
-}
-.field input:focus { border-color: var(--accent); }
-.error-msg {
-  color: var(--bearish); font-size: 0.85rem;
-  background: rgba(248,113,113,0.07); border: 1px solid rgba(248,113,113,0.2);
-  border-radius: var(--radius); padding: 10px 14px;
-}
-.btn-submit {
-  width: 100%; background: var(--accent); color: #0f0f0f; border: none;
-  border-radius: var(--radius); font-family: var(--font-sans); font-size: 0.9rem; font-weight: 700;
-  padding: 12px; cursor: pointer; transition: background 0.15s; margin-top: 4px;
-}
-.btn-submit:hover:not(:disabled) { background: #d4f554; }
-.btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+.atab--on { color: var(--text); border-bottom-color: var(--accent); }
+.auth-form { display: flex; flex-direction: column; gap: 14px; }
+.auth-submit { width: 100%; margin-top: 4px; padding: 10px; }
 
+/* tape */
 .tape {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
-  background: var(--surface); border-top: 1px solid var(--border);
-  height: 36px; overflow: hidden; display: flex; align-items: center;
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
+  height: 34px; background: var(--surface); border-top: 1px solid var(--border);
+  overflow: hidden; display: flex; align-items: center;
 }
-.tape-track {
-  display: flex; animation: scroll 40s linear infinite; white-space: nowrap;
+.tape-inner {
+  display: flex; white-space: nowrap;
+  animation: scroll 35s linear infinite;
 }
-.tape-item { display: inline-flex; gap: 8px; padding: 0 28px; font-family: var(--font-mono); font-size: 0.72rem; align-items: center; }
+.tape-item { display: inline-flex; gap: 7px; padding: 0 22px; font-family: var(--mono); font-size: 0.7rem; align-items: center; }
 .tape-sym { color: var(--muted); }
-@keyframes scroll {
-  from { transform: translateX(0); }
-  to   { transform: translateX(-50%); }
-}
-@media (max-width: 768px) {
-  .topbar { padding: 16px 20px; }
-  .hero { padding: 48px 20px 100px; }
-  .deco-cards { display: none; }
-}
+@keyframes scroll { from{transform:translateX(0)} to{transform:translateX(-50%)} }
 </style>
