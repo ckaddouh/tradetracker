@@ -17,5 +17,8 @@
   "bugs": {
     "url": "https://github.com/ckaddouh/tradetrackr/issues"
   },
-  "homepage": "https://github.com/ckaddouh/tradetrackr#readme"
+  "homepage": "https://github.com/ckaddouh/tradetrackr#readme",
+  "directories": {
+    "doc": "docs"
+  }
 }
