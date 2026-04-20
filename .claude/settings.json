@@ -1,0 +1,35 @@
+{
+    "$schema": "https://json.schemastore.org/claude-code-settings.json",
+    "permissions": {
+      "allow": [
+        "Bash(npm install)",
+        "Bash(npm install *)",
+        "Bash(npm run *)",
+        "Bash(npm test*)",
+        "Bash(node *)",
+        "Bash(npx *)",
+        "Bash(git status)",
+        "Bash(git diff*)",
+        "Bash(git log*)",
+        "Bash(git add*)",
+        "Bash(git commit*)",
+        "Bash(git checkout*)",
+        "Bash(git branch*)"
+      ],
+      "deny": [
+        "Bash(curl *)",
+        "Bash(wget *)",
+        "Bash(rm -rf *)",
+        "Bash(npm publish*)",
+        "Bash(npm run deploy*)",
+        "Read(./.env)",
+        "Read(./.env.*)",
+        "Read(./secrets/**)"
+      ]
+    },
+    "attribution": {
+      "commits": true,
+      "pullRequests": false
+    }
+  }
+  
