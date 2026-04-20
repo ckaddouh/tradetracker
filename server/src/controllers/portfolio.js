@@ -1,4 +1,23 @@
 const Trade = require('../models/Trade');
+const axios = require('axios');
+
+const fetchCurrentPrice = async (ticker) => {
+  try {
+    const apiKey = process.env.STOCK_API_KEY;
+    if (!apiKey) {
+      throw new Error('Stock API key not configured');
+    }
+    const response = await axios.get(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${ticker}&apikey=${apiKey}`);
+    const data = response.data['Global Quote'];
+    if (data && data['05. price']) {
+      return parseFloat(data['05. price']);
+    }
+    return null;
+  } catch (err) {
+    console.error(`Error fetching price for ${ticker}:`, err.message);
+    return null;
+  }
+};
 
 const getPortfolio = async (req, res, next) => {
   try {
@@ -6,6 +25,25 @@ const getPortfolio = async (req, res, next) => {
 
     const openTrades = trades.filter((t) => t.status === 'open');
     const closedTrades = trades.filter((t) => t.status === 'closed');
+
+    // Get unique tickers for open trades
+    const uniqueTickers = [...new Set(openTrades.map(t => t.ticker))];
+
+    // Fetch current prices
+    const pricePromises = uniqueTickers.map(ticker => fetchCurrentPrice(ticker));
+    const prices = await Promise.all(pricePromises);
+    const priceMap = {};
+    uniqueTickers.forEach((ticker, i) => {
+      priceMap[ticker] = prices[i];
+    });
+
+    // Update currentPrice in DB for open trades
+    for (const trade of openTrades) {
+      if (priceMap[trade.ticker] != null) {
+        trade.currentPrice = priceMap[trade.ticker];
+        await trade.save();
+      }
+    }
 
     // Realised P&L: closed trades where we have currentPrice (exit price)
     const realisedPnl = closedTrades.reduce((sum, t) => {
@@ -15,7 +53,7 @@ const getPortfolio = async (req, res, next) => {
       return sum;
     }, 0);
 
-    // Unrealised P&L: open trades with a currentPrice set
+    // Unrealised P&L: open trades with currentPrice
     const unrealisedPnl = openTrades.reduce((sum, t) => {
       if (t.currentPrice != null) {
         return sum + (t.currentPrice - t.entryPrice) * t.quantity;

@@ -9,6 +9,7 @@ const tradeRoutes = require('./routes/trades');
 const earningsRoutes = require('./routes/earnings');
 const portfolioRoutes = require('./routes/portfolio');
 const watchlistRoutes = require('./routes/watchlist');
+const pricesRoutes = require('./routes/prices');
 const errorHandler = require('./middleware/error');
 
 const app = express();
@@ -23,6 +24,7 @@ app.use('/api/trades', tradeRoutes);
 app.use('/api/earnings', earningsRoutes);
 app.use('/api/portfolio', portfolioRoutes);
 app.use('/api/watchlist', watchlistRoutes);
+app.use('/api/prices', pricesRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -53,6 +53,16 @@
             <button class="ic-btn ic-btn--del" @click="del(idea._id)">Delete</button>
           </div>
         </div>
+        <div v-if="ideaTrades(idea._id).length" class="ic-trades">
+          <div v-for="trade in ideaTrades(idea._id)" :key="trade._id" class="ic-trade" @click="console.log('Trade clicked:', trade); openTradeModal(trade)">
+            <span class="ic-trade-type">{{ trade.type }} {{ trade.quantity }} @ {{ fmtMoney(trade.entryPrice) }}</span>
+            <span class="ic-trade-status">{{ trade.status }}</span>
+          </div>
+        </div>
+        <!-- Debug: Show trade count -->
+        <div style="font-size: 0.7rem; color: red; margin-top: 5px;">
+          Debug: {{ ideaTrades(idea._id).length }} trades for idea {{ idea._id }}
+        </div>
       </div>
     </div>
 
@@ -122,7 +132,43 @@
         </form>
       </div>
     </div>
+
+    <!-- trade modal -->
+    <div v-if="showTradeModal" class="modal-overlay" @click.self="closeTradeModal">
+      <div class="modal modal--wide">
+        <div class="modal-header">
+          <h2 class="modal-title">{{ selectedTrade.ticker }} Trade</h2>
+          <button class="modal-close" @click="closeTradeModal">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="trade-details">
+            <div class="trade-info">
+              <p><strong>Type:</strong> {{ selectedTrade.type }}</p>
+              <p><strong>Quantity:</strong> {{ selectedTrade.quantity }}</p>
+              <p><strong>Entry Price:</strong> {{ fmtMoney(selectedTrade.entryPrice) }}</p>
+              <p><strong>Opened:</strong> {{ fmtDate(selectedTrade.openedAt) }}</p>
+              <p v-if="selectedTrade.closedAt"><strong>Closed:</strong> {{ fmtDate(selectedTrade.closedAt) }}</p>
+              <p><strong>Status:</strong> {{ selectedTrade.status }}</p>
+            </div>
+            <div class="trade-chart">
+              <div class="chart-controls">
+                <button v-for="tf in timeFrames" :key="tf.val" :class="['pill', chartPeriod===tf.val&&'active']" @click="chartPeriod=tf.val; fetchChartData()">
+                  {{ tf.label }}
+                </button>
+              </div>
+              <div class="chart-area">
+                <canvas ref="tradeChartCanvas"></canvas>
+                <div v-if="chartLoading" class="chart-cover">
+                  <div class="skeleton" style="width:100%;height:100%;border-radius:6px;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
+
 </template>
 
 <script>
@@ -131,7 +177,7 @@ export default {
   name: 'Journal',
   data() {
     return {
-      ideas: [], loading: true, showModal: false, editing: null,
+      ideas: [], trades: [], loading: true, showModal: false, editing: null,
       saving: false, formErr: null, activeFilter: 'all',
       catalystsRaw: '', tagsRaw: '',
       form: this.blank(),
@@ -139,11 +185,22 @@ export default {
         {label:'All',val:'all'},{label:'Researching',val:'researching'},
         {label:'Active',val:'active'},{label:'Closed',val:'closed'},
       ],
+      showTradeModal: false, selectedTrade: {}, chartData: [], chartLoading: false, chartPeriod: '1M', tradeChart: null,
+      timeFrames: [
+        {label:'1M',val:'1M'},{label:'3M',val:'3M'},{label:'6M',val:'6M'},{label:'1Y',val:'1Y'},
+      ],
     }
   },
   computed: {
     filtered() {
       return this.activeFilter==='all' ? this.ideas : this.ideas.filter(i=>i.status===this.activeFilter)
+    },
+    ideaTrades() {
+      return (ideaId) => {
+        const filtered = this.trades.filter(t => t.ideaId === ideaId || t.ideaId === ideaId.toString())
+        console.log('ideaTrades for', ideaId, 'found', filtered.length, 'trades')
+        return filtered
+      }
     },
   },
   async created() { await this.fetch() },
@@ -151,7 +208,13 @@ export default {
     blank() { return {ticker:'',title:'',direction:'bullish',thesis:'',timeHorizon:'short',status:'researching'} },
     async fetch() {
       this.loading = true
-      try { this.ideas = await api.get('/ideas') } finally { this.loading = false }
+      try {
+        const [ideas, trades] = await Promise.all([api.get('/ideas'), api.get('/trades')])
+        this.ideas = ideas
+        this.trades = trades
+        console.log('Fetched ideas:', ideas.length, 'trades:', trades.length)
+        console.log('Trades:', trades)
+      } finally { this.loading = false }
     },
     openModal(idea=null) {
       this.formErr = null
@@ -198,6 +261,91 @@ export default {
       this.ideas = this.ideas.filter(i=>i._id!==id)
     },
     fmtDate(d) { return new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) },
+    fmtMoney(v) { return `$${v.toFixed(2)}` },
+    openTradeModal(trade) {
+      console.log('Opening trade modal for:', trade)
+      this.selectedTrade = trade
+      this.showTradeModal = true
+      this.fetchChartData()
+    },
+    closeTradeModal() {
+      this.showTradeModal = false
+      if (this.tradeChart) this.tradeChart.destroy()
+    },
+    async fetchChartData() {
+      this.chartLoading = true
+      try {
+        console.log('Fetching chart data for:', this.selectedTrade.ticker, this.chartPeriod)
+        this.chartData = await api.get(`/prices/historical?ticker=${this.selectedTrade.ticker}&period=${this.chartPeriod}`)
+        console.log('Chart data received:', this.chartData)
+        await this.$nextTick()
+        this.drawChart()
+      } catch(e) {
+        console.error('Error fetching chart data:', e)
+        this.chartData = []
+      } finally {
+        this.chartLoading = false
+      }
+    },
+    async drawChart() {
+      const canvas = this.$refs.tradeChartCanvas
+      if (!canvas || !this.chartData.length) return
+      const { Chart, LineElement, PointElement, LinearScale, CategoryScale, Filler, Tooltip } = await import('chart.js')
+      const annotationPlugin = await import('chartjs-plugin-annotation')
+      Chart.register(LineElement, PointElement, LinearScale, CategoryScale, Filler, Tooltip, annotationPlugin)
+      if (this.tradeChart) this.tradeChart.destroy()
+      const labels = this.chartData.map(p => new Date(p.date).toLocaleDateString('en-US',{month:'short',day:'numeric'}))
+      const values = this.chartData.map(p => p.close)
+      const entryDate = new Date(this.selectedTrade.openedAt).toISOString().split('T')[0]
+      const entryIndex = this.chartData.findIndex(p => p.date === entryDate)
+      const entryValue = entryIndex !== -1 ? values[entryIndex] : null
+      console.log('Chart data:', this.chartData.length, 'Entry date:', entryDate, 'Entry index:', entryIndex, 'Entry value:', entryValue)
+      this.tradeChart = new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            data: values, borderColor: '#3ddc84', borderWidth: 1.5,
+            pointRadius: 0, pointHoverRadius: 4, pointHoverBackgroundColor: '#3ddc84',
+            fill: true,
+            backgroundColor: ctx => {
+              const g = ctx.chart.ctx.createLinearGradient(0,0,0,200)
+              g.addColorStop(0, 'rgba(61,220,132,0.14)')
+              g.addColorStop(1, 'rgba(0,0,0,0)')
+              return g
+            },
+            tension: 0.3,
+          }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: {display:false},
+            tooltip: {
+              callbacks: {label:ctx=>`$${ctx.parsed.y.toFixed(2)}`},
+            },
+            annotation: entryValue ? {
+              annotations: {
+                entryPoint: {
+                  type: 'point',
+                  xValue: entryIndex,
+                  yValue: entryValue,
+                  backgroundColor: '#ff6b6b',
+                  borderColor: '#ff6b6b',
+                  borderWidth: 2,
+                  radius: 6,
+                  label: {
+                    content: 'Entry',
+                    enabled: true,
+                    position: 'top'
+                  }
+                }
+              }
+            } : {},
+          },
+        },
+      })
+    },
   },
 }
 </script>
@@ -263,10 +411,61 @@ export default {
 .ic-btn:hover { color: var(--text); border-color: var(--border2); }
 .ic-btn--del:hover { color: var(--red); border-color: rgba(255,107,107,0.35); background: rgba(255,107,107,0.05); }
 
+.ic-trades { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.ic-trade {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 12px; margin-bottom: 6px; background: var(--surface2);
+  border: 1px solid var(--border); border-radius: var(--r); cursor: pointer;
+  transition: all 0.12s;
+}
+.ic-trade:hover { border-color: var(--border2); background: var(--surface); }
+.ic-trade-type { font-family: var(--mono); font-size: 0.75rem; color: var(--text); }
+.ic-trade-status {
+  font-family: var(--mono); font-size: 0.65rem; color: var(--muted);
+  background: var(--surface); padding: 2px 6px; border-radius: 3px;
+}
+
 .empty-state {
   display: flex; flex-direction: column; align-items: center; gap: 14px;
   padding: 80px 24px; text-align: center;
 }
 .empty-icon { font-size: 2rem; }
 .empty-msg { color: var(--muted); font-size: 0.88rem; }
+
+/* Modal styles */
+.modal-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center;
+  z-index: 1000; padding: 20px;
+}
+.modal {
+  background: var(--surface); border-radius: var(--r); max-width: 500px; width: 100%;
+  max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+}
+.modal--wide { max-width: 800px; }
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 24px; border-bottom: 1px solid var(--border);
+}
+.modal-title { font-size: 1.1rem; font-weight: 600; }
+.modal-close {
+  background: none; border: none; font-size: 1.2rem; cursor: pointer;
+  color: var(--muted2); padding: 4px; border-radius: 4px;
+  transition: all 0.12s;
+}
+.modal-close:hover { background: var(--surface2); color: var(--text); }
+.modal-body { padding: 24px; }
+.modal-form { display: flex; flex-direction: column; gap: 16px; }
+.modal-actions {
+  display: flex; gap: 10px; justify-content: flex-end; padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* Trade modal specific */
+.trade-details { display: flex; gap: 24px; }
+.trade-info { flex: 1; }
+.trade-info p { margin-bottom: 8px; font-size: 0.9rem; }
+.trade-chart { flex: 2; }
+.chart-controls { display: flex; gap: 8px; margin-bottom: 16px; }
+.chart-area { height: 300px; position: relative; }
 </style>

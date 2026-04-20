@@ -1,8 +1,0 @@
-Used AI for the brainstorming stage, documented in BRAINSTORM.md. 
-
-Used AI's responses from BRAINSTORM.md to craft my brief in BRIEF.md. 
-
-Before writing any code, read docs/BRIEF.md and package.json.
-Write a numbered implementation plan for the user authentication feature.
-Include: file structure, routes, middleware, data model, and test strategy.
-Do not write any code yet. I will review the plan before we proceed.
