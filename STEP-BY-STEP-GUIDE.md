@@ -24,7 +24,7 @@ cp .env.example .env
 
 | Variable | What it is |
 |---|---|
-| `PORT` | Port the server listens on (e.g. `5000`) |
+| `PORT` | Port the server listens on (e.g. `3000`) |
 | `MONGO_URI` | Your MongoDB Atlas connection string — found in Atlas → Connect → Drivers |
 | `JWT_SECRET` | A long random string used to sign tokens — generate with `openssl rand -hex 32` |
 | `JWT_EXPIRES_IN` | How long tokens last (e.g. `7d`) |

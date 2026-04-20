@@ -15,7 +15,13 @@ async function request(method, path, body = null) {
     body: body ? JSON.stringify(body) : null,
   })
 
-  const json = await res.json()
+  let json
+  try {
+    json = await res.json()
+  } catch {
+    throw new Error(`Server error: ${res.status} ${res.statusText}`)
+  }
+
   if (!res.ok) throw new Error(json.error || `Request failed: ${res.status}`)
   return json.data
 }
