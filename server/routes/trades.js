@@ -20,10 +20,10 @@ router.get('/', async (req, res) => {
 
 // POST /api/trades — create a new trade idea
 router.post('/', async (req, res) => {
-  const { ticker, direction, assetClass, conviction, entryPrice, targetPrice, stopLoss, thesis } = req.body
+  const { ticker, direction, horizon, reason } = req.body
 
-  if (!ticker || !direction || !assetClass || !conviction || !thesis) {
-    return res.status(400).json({ error: 'ticker, direction, assetClass, conviction, and thesis are required' })
+  if (!ticker || !direction || !horizon || !reason) {
+    return res.status(400).json({ error: 'ticker, direction, horizon, and reason are required' })
   }
 
   try {
@@ -31,17 +31,57 @@ router.post('/', async (req, res) => {
       userId: req.user.userId,
       ticker,
       direction,
-      assetClass,
-      conviction,
-      entryPrice,
-      targetPrice,
-      stopLoss,
-      thesis
+      horizon,
+      reason
     })
     res.status(201).json(trade)
   } catch (error) {
     console.error('Error creating trade:', error.message)
     res.status(500).json({ error: 'Failed to create trade idea' })
+  }
+})
+
+
+// GET /api/trades/chart/:ticker?from=<unix_ts> — proxy Yahoo Finance chart data
+// No auth required so the frontend can call it freely; no user data is exposed
+const cache = new Map()
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
+router.get('/chart/:ticker', async (req, res) => {
+  const { ticker } = req.params
+  const cacheKey = `${ticker}-${req.query.from}`
+
+  if (cache.has(cacheKey)) {
+    const { data, ts } = cache.get(cacheKey)
+    if (Date.now() - ts < CACHE_TTL) return res.json(data)
+  }
+
+  const from = parseInt(req.query.from) || Math.floor(Date.now() / 1000) - 60 * 60 * 24 * 365
+  const to = Math.floor(Date.now() / 1000)
+
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&period1=${from}&period2=${to}`
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Origin': 'https://finance.yahoo.com',
+        'Referer': 'https://finance.yahoo.com',
+      }
+    })
+
+    if (!response.ok) {
+      return res.status(response.status).json({ error: 'Failed to fetch chart data from Yahoo Finance' })
+    }
+
+    const data = await response.json()
+    cache.set(cacheKey, { data, ts: Date.now() }) // ✅ cache it
+    res.json(data)                                 // ✅ send once
+  } catch (error) {
+    console.error('Chart proxy error:', error.message)
+    res.status(500).json({ error: 'Chart proxy request failed' })
   }
 })
 
@@ -53,7 +93,7 @@ router.patch('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Trade not found' })
     }
 
-    const allowedFields = ['status', 'outcome', 'targetPrice', 'stopLoss', 'thesis', 'closedAt']
+    const allowedFields = ['status', 'outcome', 'reason', 'closedAt']
     allowedFields.forEach(field => {
       if (req.body[field] !== undefined) {
         trade[field] = req.body[field]
@@ -85,5 +125,6 @@ router.delete('/:id', async (req, res) => {
     res.status(500).json({ error: 'Failed to delete trade' })
   }
 })
+
 
 module.exports = router

@@ -171,4 +171,98 @@ router.delete('/:id', async (req, res) => {
   }
 })
 
+// GET /api/earnings/summarize/:ticker — use Claude to summarize recent earnings
+router.get('/summarize/:ticker', async (req, res) => {
+  const { ticker } = req.params
+
+  try {
+    // 1. Fetch recent earnings data from Alpha Vantage
+    const [earningsRes, overviewRes] = await Promise.all([
+      axios.get('https://www.alphavantage.co/query', {
+        params: { function: 'EARNINGS', symbol: ticker, apikey: process.env.ALPHA_VANTAGE_KEY }
+      }),
+      axios.get('https://www.alphavantage.co/query', {
+        params: { function: 'OVERVIEW', symbol: ticker, apikey: process.env.ALPHA_VANTAGE_KEY }
+      })
+    ])
+
+    const earningsData = earningsRes.data
+    const overview = overviewRes.data
+
+    // Get the most recent 2 quarterly reports for context
+    const quarterlyReports = (earningsData.quarterlyEarnings || []).slice(0, 2)
+
+    if (!quarterlyReports.length) {
+      return res.status(404).json({ error: 'No earnings data found for this ticker' })
+    }
+
+    const latest = quarterlyReports[0]
+
+    // 2. Build a structured prompt for Claude
+    const prompt = `You are a financial analyst. Summarize the most recent earnings report for ${ticker} (${overview.Name || ticker}) based on this data.
+
+Company Overview:
+- Sector: ${overview.Sector || 'N/A'}
+- Industry: ${overview.Industry || 'N/A'}
+- Market Cap: ${overview.MarketCapitalization ? '$' + Number(overview.MarketCapitalization).toLocaleString() : 'N/A'}
+- 52-week high/low: ${overview['52WeekHigh'] || 'N/A'} / ${overview['52WeekLow'] || 'N/A'}
+- P/E Ratio: ${overview.PERatio || 'N/A'}
+- Analyst target price: ${overview.AnalystTargetPrice || 'N/A'}
+- Forward P/E: ${overview.ForwardPE || 'N/A'}
+- Profit margin: ${overview.ProfitMargin || 'N/A'}
+- Revenue TTM: ${overview.RevenueTTM ? '$' + Number(overview.RevenueTTM).toLocaleString() : 'N/A'}
+- EPS TTM: ${overview.EPS || 'N/A'}
+
+Most Recent Quarter (${latest.fiscalDateEnding}):
+- Reported EPS: ${latest.reportedEPS}
+- Estimated EPS: ${latest.estimatedEPS}
+- EPS Surprise: ${latest.surprise} (${latest.surprisePercentage}%)
+
+${quarterlyReports[1] ? `Previous Quarter (${quarterlyReports[1].fiscalDateEnding}):
+- Reported EPS: ${quarterlyReports[1].reportedEPS}
+- Estimated EPS: ${quarterlyReports[1].estimatedEPS}
+- EPS Surprise: ${quarterlyReports[1].surprise} (${quarterlyReports[1].surprisePercentage}%)` : ''}
+
+Please provide a concise earnings summary in this exact JSON format (no markdown, pure JSON):
+{
+  "verdict": "beat" | "miss" | "inline",
+  "headline": "one sentence verdict with the key number",
+  "epsActual": <number>,
+  "epsEstimate": <number>,
+  "surprisePct": <number>,
+  "keyPoints": ["point 1", "point 2", "point 3", "point 4"],
+  "sentiment": "bullish" | "bearish" | "neutral",
+  "analystTarget": "<price or null>",
+  "watchFor": "one sentence on what to watch going forward as a trader"
+}`
+
+    // 3. Call Claude API
+    const claudeRes = await axios.post(
+      'https://api.anthropic.com/v1/messages',
+      {
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        messages: [{ role: 'user', content: prompt }]
+      },
+      {
+        headers: {
+          'x-api-key': process.env.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json'
+        }
+      }
+    )
+
+    const rawText = claudeRes.data.content[0].text.trim()
+    // Strip any accidental markdown fences
+    const jsonText = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim()
+    const summary = JSON.parse(jsonText)
+
+    res.json({ ticker, fiscalDate: latest.fiscalDateEnding, ...summary })
+  } catch (error) {
+    console.error('Earnings summarize error:', error.response?.data || error.message)
+    res.status(500).json({ error: 'Failed to generate earnings summary' })
+  }
+})
+
 module.exports = router

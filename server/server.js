@@ -12,7 +12,6 @@ const app = express()
 
 app.use(cors({ origin: 'http://localhost:5173' }))
 app.use(express.json())
-app.use('/api/earnings', earningsRoutes)       
 
 
 app.get('/', (req, res) => {

@@ -17,27 +17,12 @@ const tradeIdeaSchema = new mongoose.Schema({
     enum: ['long', 'short'],
     required: true
   },
-  assetClass: {
+  horizon: {
     type: String,
-    enum: ['equity', 'option', 'ETF', 'futures', 'other'],
+    enum: ['intraday', 'swing', 'weeks', 'months', 'long-term'],
     required: true
   },
-  conviction: {
-    type: Number,
-    min: 1,
-    max: 5,
-    required: true
-  },
-  entryPrice: {
-    type: Number
-  },
-  targetPrice: {
-    type: Number
-  },
-  stopLoss: {
-    type: Number
-  },
-  thesis: {
+  reason: {
     type: String,
     required: true,
     trim: true

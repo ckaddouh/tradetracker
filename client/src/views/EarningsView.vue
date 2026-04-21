@@ -55,36 +55,10 @@
           </div>
         </div>
 
-        <!-- Upcoming earnings to quick-add -->
-        <div v-if="calendarLoading" class="empty">Loading upcoming earnings...</div>
-        <div v-else-if="earningsStore.calendar.length > 0" class="discover-section">
-          <p class="calendar-subtitle">Upcoming earnings — click <strong>+</strong> to watch</p>
-          <div class="calendar-grid">
-            <div
-              v-for="item in earningsStore.calendar"
-              :key="item.ticker"
-              class="calendar-card"
-            >
-              <div class="calendar-card-header">
-                <span class="ticker">{{ item.ticker }}</span>
-                <span class="report-date">{{ formatDate(item.reportDate) }}</span>
-              </div>
-              <p class="company-name">{{ item.name }}</p>
-              <p class="eps" v-if="item.estimatedEPS">Est. EPS: {{ item.estimatedEPS }}</p>
-              <button
-                v-if="!earningsStore.watchedTickers.includes(item.ticker)"
-                @click="quickWatch(item)"
-                class="watch-btn"
-              >
-                + Watch
-              </button>
-              <span v-else class="watching-badge">Watching ✓</span>
-            </div>
-          </div>
-        </div>
+        <!-- YOUR WATCHLIST — top section -->
         <div v-if="watchlistLoading" class="empty">Loading...</div>
-        <div v-else-if="earningsStore.upcoming.length === 0" class="empty">
-          No tickers on your watchlist yet — search above or click <strong>+ Watch</strong> on any upcoming name.
+        <div v-else-if="earningsStore.upcoming.length === 0" class="empty-watchlist">
+          Nothing on your watchlist yet — click <strong>+ Watch</strong> below or search above.
         </div>
         <div v-else class="earnings-list">
           <div v-for="watch in earningsStore.upcoming" :key="watch._id" class="earnings-card">
@@ -130,8 +104,38 @@
             </div>
           </div>
         </div>
+
+        <!-- Divider -->
+        <div class="suggestions-divider">
+          <span>Upcoming earnings — click + Watch to add</span>
+        </div>
+
+        <!-- Calendar suggestions -->
+        <div v-if="calendarLoading" class="empty">Loading upcoming earnings...</div>
+        <div v-else-if="earningsStore.calendar.length > 0" class="calendar-grid">
+          <div
+            v-for="item in earningsStore.calendar"
+            :key="item.ticker"
+            class="calendar-card"
+          >
+            <div class="calendar-card-header">
+              <span class="ticker">{{ item.ticker }}</span>
+              <span class="report-date">{{ formatDate(item.reportDate) }}</span>
+            </div>
+            <p class="company-name">{{ item.name }}</p>
+            <p class="eps" v-if="item.estimatedEPS">Est. EPS: {{ item.estimatedEPS }}</p>
+            <button
+              v-if="!earningsStore.watchedTickers.includes(item.ticker)"
+              @click="quickWatch(item)"
+              class="watch-btn"
+            >
+              + Watch
+            </button>
+            <span v-else class="watching-badge">Watching ✓</span>
+          </div>
+        </div>
       </div>
-  
+
       <!-- COMPLETED TAB -->
       <div v-if="activeTab === 'Completed'">
         <div v-if="earningsStore.completed.length === 0" class="empty">No completed earnings yet.</div>
@@ -144,9 +148,10 @@
                 <span v-if="watch.result" :class="['result-badge', watch.result]">{{ watch.result }}</span>
               </div>
               <div class="card-meta">
-                <span :class="['move', watch.actualMove >= 0 ? 'positive' : 'negative']">
+                <span v-if="watch.actualMove != null" :class="['move', watch.actualMove >= 0 ? 'positive' : 'negative']">
                   {{ watch.actualMove >= 0 ? '+' : '' }}{{ watch.actualMove }}%
                 </span>
+                <button @click="openSummary(watch)" class="summarize-btn">✦ AI Summary</button>
                 <button @click="earningsStore.deleteWatch(watch._id)" class="delete-btn">Delete</button>
               </div>
             </div>
@@ -154,8 +159,70 @@
           </div>
         </div>
       </div>
-  
     </div>
+
+  <!-- Earnings Summary Modal -->
+  <Teleport to="body">
+    <div v-if="summaryModal.open" class="modal-backdrop" @click.self="summaryModal.open = false">
+      <div class="summary-modal">
+        <div class="summary-header">
+          <div class="summary-title-row">
+            <span class="summary-ticker">{{ summaryModal.ticker }}</span>
+            <span v-if="summaryData" :class="['verdict-badge', summaryData.verdict]">
+              {{ summaryData.verdict === 'beat' ? '✓ Beat' : summaryData.verdict === 'miss' ? '✗ Miss' : '— Inline' }}
+            </span>
+            <span v-if="summaryData" :class="['sentiment-badge', summaryData.sentiment]">{{ summaryData.sentiment }}</span>
+          </div>
+          <button class="close-btn" @click="summaryModal.open = false">✕</button>
+        </div>
+
+        <div v-if="summaryLoading" class="summary-loading">
+          <div class="spinner"></div>
+          <span>Analyzing earnings report...</span>
+        </div>
+
+        <div v-else-if="summaryError" class="summary-error">{{ summaryError }}</div>
+
+        <div v-else-if="summaryData" class="summary-body">
+          <p class="summary-headline">{{ summaryData.headline }}</p>
+
+          <div class="eps-row">
+            <div class="eps-box">
+              <span class="eps-label">Reported EPS</span>
+              <span class="eps-value">${{ summaryData.epsActual?.toFixed(2) }}</span>
+            </div>
+            <div class="eps-box">
+              <span class="eps-label">Estimated EPS</span>
+              <span class="eps-value">${{ summaryData.epsEstimate?.toFixed(2) }}</span>
+            </div>
+            <div class="eps-box">
+              <span class="eps-label">Surprise</span>
+              <span :class="['eps-value', summaryData.surprisePct >= 0 ? 'positive' : 'negative']">
+                {{ summaryData.surprisePct >= 0 ? '+' : '' }}{{ summaryData.surprisePct?.toFixed(1) }}%
+              </span>
+            </div>
+            <div v-if="summaryData.analystTarget" class="eps-box">
+              <span class="eps-label">Analyst Target</span>
+              <span class="eps-value">${{ summaryData.analystTarget }}</span>
+            </div>
+          </div>
+
+          <div class="key-points">
+            <h4>Key Points</h4>
+            <ul>
+              <li v-for="(point, i) in summaryData.keyPoints" :key="i">{{ point }}</li>
+            </ul>
+          </div>
+
+          <div class="watch-for">
+            <span class="watch-label">📍 Watch for:</span>
+            <span>{{ summaryData.watchFor }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
   </template>
   
   <script setup>
@@ -172,6 +239,32 @@
   const lookupMessage = ref('')
   const activeTab = ref('My Watchlist')
   const tabs = ['My Watchlist', 'Completed']
+
+  // Earnings summary modal state
+  const summaryModal = ref({ open: false, ticker: '' })
+  const summaryLoading = ref(false)
+  const summaryError = ref('')
+  const summaryData = ref(null)
+
+  async function openSummary(watch) {
+    summaryModal.value = { open: true, ticker: watch.ticker }
+    summaryLoading.value = true
+    summaryError.value = ''
+    summaryData.value = null
+    try {
+      const token = localStorage.getItem('token')
+      const res = await fetch(`/api/earnings/summarize/${encodeURIComponent(watch.ticker)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to load summary')
+      summaryData.value = data
+    } catch (err) {
+      summaryError.value = err.message
+    } finally {
+      summaryLoading.value = false
+    }
+  }
   
   const form = ref({
     ticker: '',
@@ -629,13 +722,250 @@
     padding-top: 0.75rem;
   }
   
+  .suggestions-divider {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 1.75rem 0 1.25rem;
+    color: #444;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .suggestions-divider::before,
+  .suggestions-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #2a2f3e;
+  }
+
+  .empty-watchlist {
+    text-align: center;
+    color: #555;
+    padding: 1.5rem;
+    font-size: 0.9rem;
+  }
+
   .discover-section {
     margin-bottom: 1.5rem;
   }
+
 
   .empty {
     color: #555;
     text-align: center;
     padding: 3rem;
+  }
+
+  /* Summarize button */
+  .summarize-btn {
+    background: none;
+    border: 1px solid #4ade8055;
+    color: #4ade80;
+    padding: 0.3rem 0.75rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 600;
+    transition: background 0.15s;
+  }
+  .summarize-btn:hover { background: #1b2d1b; }
+
+  /* Summary Modal */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 1rem;
+  }
+
+  .summary-modal {
+    background: #0f1117;
+    border: 1px solid #2a2f3e;
+    border-radius: 14px;
+    width: 100%;
+    max-width: 640px;
+    padding: 1.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .summary-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .summary-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .summary-ticker {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #e0e0e0;
+  }
+
+  .verdict-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 700;
+  }
+  .verdict-badge.beat { background: #1b2d1b; color: #4ade80; }
+  .verdict-badge.miss { background: #2d1b1b; color: #e05252; }
+  .verdict-badge.inline { background: #2a2f3e; color: #aaa; }
+
+  .sentiment-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.82rem;
+    border: 1px solid #2a2f3e;
+    color: #888;
+    text-transform: capitalize;
+  }
+
+  .close-btn {
+    background: none;
+    border: none;
+    color: #555;
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    transition: color 0.15s;
+    flex-shrink: 0;
+  }
+  .close-btn:hover { color: #e0e0e0; }
+
+  .summary-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    padding: 2rem;
+    color: #555;
+    font-size: 0.9rem;
+  }
+
+  .spinner {
+    width: 28px;
+    height: 28px;
+    border: 2px solid #2a2f3e;
+    border-top-color: #4ade80;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .summary-error {
+    color: #e05252;
+    padding: 1rem;
+    background: #2d1b1b;
+    border-radius: 8px;
+    font-size: 0.9rem;
+  }
+
+  .summary-headline {
+    font-size: 1rem;
+    color: #e0e0e0;
+    line-height: 1.5;
+    font-weight: 500;
+  }
+
+  .eps-row {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .eps-box {
+    flex: 1;
+    min-width: 110px;
+    background: #161b27;
+    border: 1px solid #2a2f3e;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .eps-label {
+    font-size: 0.75rem;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .eps-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #e0e0e0;
+  }
+  .eps-value.positive { color: #4ade80; }
+  .eps-value.negative { color: #e05252; }
+
+  .key-points h4 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #555;
+    margin-bottom: 0.6rem;
+  }
+
+  .key-points ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .key-points li {
+    font-size: 0.9rem;
+    color: #bbb;
+    padding-left: 1.1rem;
+    position: relative;
+    line-height: 1.5;
+  }
+
+  .key-points li::before {
+    content: '›';
+    position: absolute;
+    left: 0;
+    color: #4ade80;
+    font-weight: 700;
+  }
+
+  .watch-for {
+    background: #161b27;
+    border: 1px solid #2a2f3e;
+    border-left: 3px solid #f59e0b;
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+    color: #bbb;
+    line-height: 1.5;
+  }
+
+  .watch-label {
+    color: #f59e0b;
+    font-weight: 600;
+    margin-right: 0.5rem;
   }
   </style>
