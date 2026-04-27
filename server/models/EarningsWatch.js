@@ -36,6 +36,11 @@ const earningsWatchSchema = new mongoose.Schema({
   createdAt: {
     type: Date,
     default: Date.now
+  },
+  status: { 
+    type: String, 
+    enum: ['active', 'completed'], 
+    default: 'active' 
   }
 })
 
