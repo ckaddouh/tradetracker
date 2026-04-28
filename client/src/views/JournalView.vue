@@ -77,14 +77,13 @@ const loading = ref(false)
 const submitting = ref(false)
 const formError = ref('')
 const activeTab = ref('Open')
-const tabs = ['Open', 'Monitoring', 'Closed']
+const tabs = ['Open', 'Closed']
 const tickerValidating = ref(false)
 const tickerValid = ref(null)
 const form = ref({ ticker: '', direction: 'long', horizon: '', reason: '' })
 
 const filteredTrades = computed(() => {
   if (activeTab.value === 'Open') return tradeStore.openTrades
-  if (activeTab.value === 'Monitoring') return tradeStore.monitoringTrades
   if (activeTab.value === 'Closed') return tradeStore.closedTrades
   return tradeStore.trades
 })

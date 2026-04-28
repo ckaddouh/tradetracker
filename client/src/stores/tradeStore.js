@@ -9,8 +9,7 @@ export const useTradeStore = defineStore('trades', {
 
   getters: {
     openTrades: (state) => state.trades.filter(t => t.status === 'open'),
-    closedTrades: (state) => state.trades.filter(t => t.status === 'closed'),
-    monitoringTrades: (state) => state.trades.filter(t => t.status === 'monitoring')
+    closedTrades: (state) => state.trades.filter(t => t.status === 'closed')
   },
 
   actions: {
