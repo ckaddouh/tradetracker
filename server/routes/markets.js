@@ -1,5 +1,6 @@
 const express = require('express')
 const router = express.Router()
+const SupplyChainTree = require('../models/SupplyChainTree')  // adjust path if needed
 
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions'
 const MODEL = 'llama-3.3-70b-versatile'
@@ -107,6 +108,7 @@ router.get('/sec/:ticker', async (req, res) => {
 
     const text = extractTextFromHtml(html)
     res.json({ ticker, name: companyName, cik, filingDate, docUrl, text })
+  
   } catch (err) {
     console.error('[sec]', err.message)
     res.status(500).json({ error: err.message })
@@ -267,7 +269,7 @@ Rules:
 - Include ALL revenue segments/product lines reported in the filing — do not omit any
 - For Apple this means iPhone, Mac, iPad, Wearables/Home/Accessories, AND Services
 - revenueShare must be populated for every segment using actual figures from the filing
-- Go at least 5 levels deep (company → segment → input → sub-input → sub-input → sub-input)
+- Go at least 3 levels deep (company → segment → input → sub-input)
 - Mark commodity:true for raw materials, metals, energy, agricultural products
 - Include relatedTickers (other public companies) where relevant
 - Include geographicRisk where a dependency is concentrated in one region
@@ -412,5 +414,197 @@ Return ONLY JSON.`
     res.status(500).json({ error: err.message })
   }
 })
+
+// ---------------------------------------------------------------------------
+// POST /api/markets/cache-tree
+// Called internally after extract-tree to persist a tree to MongoDB.
+// Also called automatically by the /sec/:ticker route on fresh fetches.
+// ---------------------------------------------------------------------------
+
+router.post('/cache-tree', async (req, res) => {
+  try {
+    const { ticker, companyName, cik, filingDate, docUrl, tree } = req.body
+    if (!ticker || !tree) {
+      return res.status(400).json({ error: 'ticker and tree are required' })
+    }
+
+    const flatNodes = SupplyChainTree.flattenTree(tree)
+
+    await SupplyChainTree.findOneAndUpdate(
+      { ticker },
+      { ticker, companyName, cik, filingDate, docUrl, tree, flatNodes, updatedAt: new Date() },
+      { upsert: true, new: true }
+    )
+
+    console.log(`[cache-tree] Saved ${ticker} (${flatNodes.length} nodes)`)
+    res.json({ ok: true, nodeCount: flatNodes.length })
+  } catch (err) {
+    console.error('[cache-tree]', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// GET /api/markets/tree/:ticker
+// Return cached tree if available and up to date; otherwise build + cache it.
+// ---------------------------------------------------------------------------
+
+router.get('/tree/:ticker', async (req, res) => {
+  try {
+    const ticker = req.params.ticker.toUpperCase()
+
+    // 1. Check SEC for the latest filing date (fast — just submissions JSON)
+    const cik = await resolveCik(ticker)
+    const { filingDate, primaryDoc, accessionClean, companyName, cikInt } = await getLatest10KMeta(cik, ticker)
+
+    // 2. Check cache
+    const cached = await SupplyChainTree.findOne({ ticker })
+    if (cached && cached.filingDate === filingDate) {
+      console.log(`[tree] Cache hit for ${ticker} (${filingDate})`)
+      return res.json({ source: 'cache', tree: cached.tree, filingDate, companyName: cached.companyName })
+    }
+
+    // 3. Cache miss or stale — fetch, build, cache
+    console.log(`[tree] Cache miss for ${ticker} — building…`)
+    const docUrl = `https://www.sec.gov/Archives/edgar/data/${cikInt}/${accessionClean}/${primaryDoc}`
+    const docRes = await fetch(docUrl, { headers: EDGAR_HTML_HEADERS })
+    if (!docRes.ok) throw new Error(`Could not fetch 10-K doc (${docRes.status})`)
+    const html = await docRes.text()
+    const text = extractTextFromHtml(html)
+
+    const treeRes = await fetch(`http://localhost:${process.env.PORT || 3000}/api/markets/extract-tree`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker, companyName, tenKText: text }),
+    })
+    if (!treeRes.ok) throw new Error('extract-tree failed')
+    const tree = await treeRes.json()
+
+    const flatNodes = SupplyChainTree.flattenTree(tree)
+    await SupplyChainTree.findOneAndUpdate(
+      { ticker },
+      { ticker, companyName, cik, filingDate, docUrl, tree, flatNodes, updatedAt: new Date() },
+      { upsert: true, new: true }
+    )
+
+    res.json({ source: 'fresh', tree, filingDate, companyName })
+  } catch (err) {
+    console.error('[tree]', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// POST /api/markets/impact-search
+// Given a list of affected node concepts from news analysis, find every
+// company in the DB whose tree contains a matching node — at any depth —
+// and return the upward path for each match.
+// ---------------------------------------------------------------------------
+
+router.post('/impact-search', async (req, res) => {
+  try {
+    const { concepts } = req.body
+    // concepts: array of strings from the news analysis affectedNodes, e.g.
+    // ["x86 architecture", "NAND flash memory", "Taiwan manufacturing"]
+    if (!concepts || !concepts.length) {
+      return res.status(400).json({ error: 'concepts array is required' })
+    }
+
+    // Build a regex OR query across all concept strings
+    const regexes = concepts.map(c => new RegExp(c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'))
+
+    // Search flatNodes.name and flatNodes.description across all stored companies
+    const matches = await SupplyChainTree.aggregate([
+      // Unwind to get one doc per node
+      { $unwind: '$flatNodes' },
+      // Match nodes whose name or description matches any concept
+      {
+        $match: {
+          $or: [
+            { 'flatNodes.name': { $in: regexes } },
+            { 'flatNodes.description': { $in: regexes } },
+          ],
+        },
+      },
+      // Project only what we need
+      {
+        $project: {
+          _id: 0,
+          ticker: 1,
+          companyName: 1,
+          filingDate: 1,
+          matchedNode: '$flatNodes.name',
+          matchedDescription: '$flatNodes.description',
+          displayPath: '$flatNodes.displayPath',
+          depth: '$flatNodes.depth',
+          revenueShare: '$flatNodes.revenueShare',
+          geographicRisk: '$flatNodes.geographicRisk',
+          commodity: '$flatNodes.commodity',
+        },
+      },
+      // Sort: deepest matches first (more specific), then alphabetically
+      { $sort: { depth: -1, ticker: 1 } },
+    ])
+
+    // Group by ticker for a cleaner response
+    const byTicker = {}
+    for (const m of matches) {
+      if (!byTicker[m.ticker]) {
+        byTicker[m.ticker] = {
+          ticker: m.ticker,
+          companyName: m.companyName,
+          filingDate: m.filingDate,
+          exposures: [],
+        }
+      }
+      byTicker[m.ticker].exposures.push({
+        matchedNode: m.matchedNode,
+        displayPath: m.displayPath,
+        depth: m.depth,
+        geographicRisk: m.geographicRisk || null,
+        commodity: m.commodity || false,
+      })
+    }
+
+    const results = Object.values(byTicker).sort((a, b) =>
+      // Companies with more/deeper matches first
+      b.exposures.length - a.exposures.length
+    )
+
+    res.json({ conceptsSearched: concepts, companiesFound: results.length, results })
+  } catch (err) {
+    console.error('[impact-search]', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// Shared helpers for CIK resolution (used by /tree/:ticker)
+// ---------------------------------------------------------------------------
+
+async function resolveCik(ticker) {
+  const mapRes = await fetch('https://www.sec.gov/files/company_tickers.json', { headers: EDGAR_HEADERS })
+  if (!mapRes.ok) throw new Error('Could not fetch SEC ticker map')
+  const map = await mapRes.json()
+  const entry = Object.values(map).find(e => e.ticker.toUpperCase() === ticker)
+  if (!entry) throw new Error(`Ticker "${ticker}" not found on SEC EDGAR`)
+  return String(entry.cik_str).padStart(10, '0')
+}
+
+async function getLatest10KMeta(cik, ticker) {
+  const subRes = await fetch(`https://data.sec.gov/submissions/CIK${cik}.json`, { headers: EDGAR_HEADERS })
+  if (!subRes.ok) throw new Error(`Could not fetch submissions (${subRes.status})`)
+  const subData = await subRes.json()
+  const filings = subData.filings?.recent
+  const tenKIndex = (filings?.form || []).findIndex(f => f === '10-K')
+  if (tenKIndex === -1) throw new Error(`No 10-K found for ${ticker}`)
+  return {
+    filingDate: filings.filingDate[tenKIndex],
+    primaryDoc: filings.primaryDocument[tenKIndex],
+    accessionClean: filings.accessionNumber[tenKIndex].replace(/-/g, ''),
+    companyName: subData.name,
+    cikInt: parseInt(cik),
+  }
+}
 
 module.exports = router
