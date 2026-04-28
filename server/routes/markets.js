@@ -113,8 +113,8 @@ router.get('/sec/:ticker', async (req, res) => {
   }
 })
 
-// Strip HTML tags and extract the Business section (Item 1)
-function extractTextFromHtml(html, maxChars = 40000) {
+// Strip HTML tags and extract key 10-K sections for revenue analysis
+function extractTextFromHtml(html) {
   let text = html
     .replace(/<script[\s\S]*?<\/script>/gi, '')
     .replace(/<style[\s\S]*?<\/style>/gi, '')
@@ -127,16 +127,36 @@ function extractTextFromHtml(html, maxChars = 40000) {
     .replace(/\s{3,}/g, '\n\n')
     .trim()
 
-  const businessMatch = text.match(/item\s+1[\.\s]+business/i)
-  if (businessMatch) {
-    const start = businessMatch.index
-    text = text.slice(start, start + maxChars)
-  } else {
-    text = text.slice(0, maxChars)
+  // Pull Item 1 (Business) and Item 7 (MD&A) — together these have all segment/revenue data
+  // Keep total under ~24 000 chars (~6 000 tokens) to leave room for the prompt + response
+  const sectionPatterns = [
+    { label: 'BUSINESS', pattern: /item\s+1[^a-z]*business/i,           maxChars: 8000 },
+    { label: 'MD&A',     pattern: /item\s+7[^a-z]*management.{0,40}discussion/i, maxChars: 14000 },
+  ]
+
+  const sections = []
+  for (let i = 0; i < sectionPatterns.length; i++) {
+    const { label, pattern, maxChars } = sectionPatterns[i]
+    const match = text.match(pattern)
+    if (!match) continue
+
+    const start = match.index
+    let end = start + maxChars
+    // Don't bleed into the next section
+    const nextPattern = sectionPatterns[i + 1]?.pattern
+    if (nextPattern) {
+      const nextMatch = text.slice(start + 500).match(nextPattern)
+      if (nextMatch) end = Math.min(end, start + 500 + nextMatch.index)
+    }
+    sections.push(`=== ${label} ===\n` + text.slice(start, end))
   }
 
-  return text
+  // Fallback: first 20 000 chars if no sections matched
+  if (sections.length === 0) return text.slice(0, 20000)
+
+  return sections.join('\n\n')
 }
+
 
 // ---------------------------------------------------------------------------
 // Shared Groq helper
@@ -244,11 +264,14 @@ The tree should follow this structure:
 }
 
 Rules:
+- Include ALL revenue segments/product lines reported in the filing — do not omit any
+- For Apple this means iPhone, Mac, iPad, Wearables/Home/Accessories, AND Services
+- revenueShare must be populated for every segment using actual figures from the filing
 - Go at least 5 levels deep (company → segment → input → sub-input → sub-input → sub-input)
 - Mark commodity:true for raw materials, metals, energy, agricultural products
 - Include relatedTickers (other public companies) where relevant
 - Include geographicRisk where a dependency is concentrated in one region
-- Be specific and factual based on the filing text
+- Be specific and factual based on the filing text — do NOT summarize or drop segments
 - Return ONLY the JSON object, nothing else
 
 10-K TEXT:
@@ -257,7 +280,7 @@ ${tenKText}`
     const raw = await groqChat([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
-    ])
+    ], { maxTokens: 2048 })
 
     const tree = parseGroqJson(raw)
     res.json(tree)
