@@ -6,7 +6,7 @@ const mongoose = require('mongoose')
 const authRoutes = require('./routes/auth')
 const tradeRoutes = require('./routes/trades')
 const earningsRoutes = require('./routes/earnings')  
-
+const marketsRoutes = require('./routes/markets')  
 
 const app = express()
 
@@ -21,6 +21,7 @@ app.get('/', (req, res) => {
 app.use('/api/auth', authRoutes)
 app.use('/api/trades', tradeRoutes)
 app.use('/api/earnings', earningsRoutes)
+app.use('/api/markets', marketsRoutes)
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => {

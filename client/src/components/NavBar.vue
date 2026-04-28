@@ -6,6 +6,7 @@
           <span class="email">{{ authStore.email }}</span>
           <RouterLink to="/journal">Journal</RouterLink>
           <RouterLink to="/earnings">Earnings</RouterLink>  
+          <RouterLink to="/markets">Analyzer</RouterLink>  
           <button @click="handleLogout" class="logout-btn">Logout</button>
         </template>
         <template v-else>

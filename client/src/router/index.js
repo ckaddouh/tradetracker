@@ -4,7 +4,8 @@ import HomeView from '../views/HomeView.vue'
 import LoginView from '../views/LoginView.vue'
 import RegisterView from '../views/RegisterView.vue'
 import JournalView from '../views/JournalView.vue'
-import EarningsView from '../views/EarningsView.vue'  // add at top
+import EarningsView from '../views/EarningsView.vue'  
+import MarketView from '../views/MarketAnalyzer.vue'
 
 
 const routes = [
@@ -16,7 +17,8 @@ const routes = [
     component: JournalView,
     meta: { requiresAuth: true }
   },
-  { path: '/earnings', component: EarningsView, meta: { requiresAuth: true } }
+  { path: '/earnings', component: EarningsView, meta: { requiresAuth: true }},
+  { path: '/markets', component: MarketView, meta: { requiresAuth: true }}
 ]
 
 const router = createRouter({
