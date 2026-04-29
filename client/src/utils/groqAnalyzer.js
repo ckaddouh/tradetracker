@@ -2,6 +2,7 @@
 // All three functions mirror the server routes in server/routes/markets.js
 
 const BASE = `${import.meta.env.VITE_API_URL}/api/markets`
+console.log('API BASE:', BASE)
 
 async function post(endpoint, body) {
   const res = await fetch(`${BASE}${endpoint}`, {

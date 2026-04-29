@@ -10,15 +10,31 @@ import MarketView from '../views/MarketAnalyzer.vue'
 
 const routes = [
   { path: '/', component: HomeView },
-  { path: '/login', component: LoginView },
-  { path: '/register', component: RegisterView },
+  { 
+    path: '/login', 
+    component: LoginView,
+    meta: { guest: true }
+  },
+  { 
+    path: '/register', 
+    component: RegisterView,
+    meta: { guest: true }
+  },
   {
     path: '/journal',
     component: JournalView,
     meta: { requiresAuth: true }
   },
-  { path: '/earnings', component: EarningsView, meta: { requiresAuth: true }},
-  { path: '/markets', component: MarketView, meta: { requiresAuth: true }}
+  { 
+    path: '/earnings', 
+    component: EarningsView, 
+    meta: { requiresAuth: true }
+  },
+  { 
+    path: '/markets', 
+    component: MarketView, 
+    meta: { requiresAuth: true }
+  }
 ]
 
 const router = createRouter({
@@ -26,11 +42,17 @@ const router = createRouter({
   routes
 })
 
-// Redirect to login if route requires auth and user isn't logged in
-router.beforeEach((to) => {
+// Auth guard - redirect to login if route requires auth and user isn't logged in
+// Redirect to home if user is already logged in and trying to access guest pages
+router.beforeEach((to, from) => {
   const authStore = useAuthStore()
-  if (to.meta.requiresAuth && !authStore.token) {
+  
+  if (to.meta.requiresAuth && !authStore.isLoggedIn) {
     return '/login'
+  }
+  
+  if (to.meta.guest && authStore.isLoggedIn) {
+    return '/'
   }
 })
 

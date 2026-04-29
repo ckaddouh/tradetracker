@@ -402,7 +402,7 @@ import NodePanel from '../components/NodePanel.vue'
 import { fetchCompany10K } from '../utils/secEdgar.js'
 import { extractDependencyTree, findExposedCompanies, analyzeNewsArticle } from '../utils/groqAnalyzer.js'
 
-const API = '/api/markets'
+const API = `${import.meta.env.VITE_API_URL}/api/markets`
 
 // ── Existing state ────────────────────────────────────────────────────────────
 const tickerInput    = ref('')
@@ -475,9 +475,13 @@ async function fetchArticleFromUrl() {
   fetchingUrl.value = true
   globalError.value = ''
   try {
+    const token = localStorage.getItem('token')
     const res = await fetch(`${API}/fetch-article`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
       body: JSON.stringify({ url: globalArticleUrl.value }),
     })
     const data = await res.json()
@@ -498,9 +502,13 @@ async function runGlobalAnalysis() {
   globalError.value     = ''
   expandedCompanies.value = new Set()
   try {
+    const token = localStorage.getItem('token')
     const res = await fetch(`${API}/analyze-news-global`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
       body: JSON.stringify({ articleText: globalArticleText.value }),
     })
     const data = await res.json()

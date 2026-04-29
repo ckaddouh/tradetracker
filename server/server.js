@@ -2,6 +2,8 @@ require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
 const mongoose = require('mongoose')
+const requireAuth = require('./middleware/requireAuth')
+
 
 const authRoutes = require('./routes/auth')
 const tradeRoutes = require('./routes/trades')
@@ -21,9 +23,9 @@ app.get('/', (req, res) => {
 })
 
 app.use('/api/auth', authRoutes)
-app.use('/api/trades', tradeRoutes)
-app.use('/api/earnings', earningsRoutes)
-app.use('/api/markets', marketsRoutes)
+app.use('/api/trades', requireAuth, tradeRoutes)
+app.use('/api/earnings', requireAuth, earningsRoutes)
+app.use('/api/markets', requireAuth, marketsRoutes)
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => {
