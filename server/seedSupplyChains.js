@@ -19,7 +19,7 @@ const SupplyChainTree = require('./models/SupplyChainTree.js')  // adjust path a
 
 // ─── S&P 500 tickers ─────────────────────────────────────────────────────────
 // Full list — update periodically as index composition changes
-const SP500 = ['ACN','AES','A','APD','ABNB',
+const SP500 = ["MMM", "ABT", "ABBV", "ADBE", "AMD", "AFL",  "AOS", "A",'ACN','AES','A','APD','ABNB',
   'AKAM','ALB','ARE','ALGN','ALLE','LNT','ALL','GOOGL','GOOG','MO','AMZN',
   'AMCR','AEE','AAL','AEP','AXP','AIG','AMT','AWK','AMP','AME','AMGN','APH',
   'ADI','ANSS','AON','APA','AAPL','AMAT','APTV','ACGL','ADM','ANET','AJG',
@@ -65,7 +65,7 @@ const SP500 = ['ACN','AES','A','APD','ABNB',
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const CONCURRENCY    = 1      // parallel tickers at once — SEC allows ~10 req/s
-const DELAY_MS       = 3000   // ms between batches
+const DELAY_MS       = 30000   // ms between batches
 const PROGRESS_FILE  = path.join(__dirname, 'seed-progress.json')
 const API_BASE       = process.env.API_BASE || 'http://localhost:3000/api/markets'
 

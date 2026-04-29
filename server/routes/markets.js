@@ -220,13 +220,36 @@ router.post('/extract-tree', async (req, res) => {
       return res.status(400).json({ error: 'ticker, companyName and tenKText are required' })
     }
 
-    const systemPrompt = `You are a financial analyst specialized in supply chain mapping and revenue decomposition.
-Your job is to extract a structured dependency tree from SEC 10-K filings.
+    const systemPrompt = `You are a supply chain intelligence expert with deep knowledge of manufacturing 
+processes, industrial chemistry, materials science, and geopolitics. You build exhaustive 
+dependency trees that trace every product back to its raw materials, critical suppliers, and 
+geopolitical chokepoints — going far beyond what any company discloses in its SEC filings.
 You MUST respond with ONLY valid JSON — no markdown, no explanation, no code fences.`
 
-    const userPrompt = `Analyze this 10-K filing for ${companyName} (${ticker}) and extract a dependency tree.
+    const userPrompt = `You are building a deep supply chain dependency tree for ${companyName} (${ticker}).
 
-The tree should follow this structure:
+Your job has TWO phases:
+
+PHASE 1 — Read the 10-K to identify all revenue segments and the products/services in each.
+
+PHASE 2 — For each product or service, use your own expert knowledge of how that product is
+physically made to expand the tree downward into real-world components, materials, and suppliers.
+Do NOT limit yourself to what the 10-K mentions about suppliers.
+
+Examples of the depth required:
+- 10-K says "MRI machines" → YOU expand: superconducting magnets → niobium-titanium wire →
+  niobium mining (Brazil, 80% global supply) + liquid helium cooling (Qatar/US) + gradient copper
+  windings + RF amplifiers + rare earth shim magnets → neodymium/dysprosium sourcing (China 90%)
+- 10-K says "semiconductors" → YOU expand: photolithography → EUV machines (ASML monopoly) →
+  photoresist (JSR/Shin-Etsu, Japan) → ultra-pure water → CMP slurries → rare earth dopants
+- 10-K says "abrasives" → YOU expand: aluminum oxide → bauxite mining → Bayer process →
+  calcination → China export controls on processed alumina
+
+This tree is used to detect indirect exposure to news events. If a news article mentions
+"helium shortage", the system must find it under MRI machines in Abbott's tree without the
+article saying "Abbott" or "MRI". The leaf nodes must contain the real physical/chemical inputs.
+
+Return JSON:
 {
   "id": "root",
   "name": "${companyName}",
@@ -236,27 +259,51 @@ The tree should follow this structure:
   "children": [
     {
       "id": "seg_1",
-      "name": "Segment/Revenue Stream Name",
+      "name": "Segment Name",
       "type": "segment",
-      "revenueShare": "52%",
-      "description": "what this segment does",
+      "revenueShare": "34%",
+      "description": "what this segment sells",
       "children": [
         {
           "id": "inp_1_1",
-          "name": "Key Input/Dependency Name",
+          "name": "Product or Major System",
           "type": "input",
-          "description": "what this input is and why it matters",
-          "commodity": true,
-          "geographicRisk": "e.g. China-dependent",
+          "description": "what this product is",
+          "commodity": false,
+          "geographicRisk": null,
+          "relatedTickers": [],
           "children": [
             {
-              "id": "sub_1_1_1",
-              "name": "Sub-dependency",
+              "id": "inp_1_1_1",
+              "name": "Physical Component or Subsystem",
               "type": "input",
-              "description": "...",
+              "description": "specific technical description",
               "commodity": false,
-              "relatedTickers": ["TSMC", "AMAT"],
-              "children": []
+              "geographicRisk": "Japan-dependent",
+              "relatedTickers": ["ASML"],
+              "children": [
+                {
+                  "id": "inp_1_1_1_1",
+                  "name": "Raw Material or Critical Supplier",
+                  "type": "input",
+                  "description": "e.g. niobium-titanium alloy wire, 80% sourced from CBMM Brazil",
+                  "commodity": true,
+                  "geographicRisk": "Brazil-dependent",
+                  "relatedTickers": [],
+                  "children": [
+                    {
+                      "id": "inp_1_1_1_1_1",
+                      "name": "Upstream factor or geopolitical chokepoint",
+                      "type": "input",
+                      "description": "e.g. Brazilian niobium export policy, CBMM pricing power",
+                      "commodity": true,
+                      "geographicRisk": "Brazil-dependent",
+                      "relatedTickers": [],
+                      "children": []
+                    }
+                  ]
+                }
+              ]
             }
           ]
         }
@@ -266,17 +313,21 @@ The tree should follow this structure:
 }
 
 Rules:
-- Include ALL revenue segments/product lines reported in the filing — do not omit any
-- For Apple this means iPhone, Mac, iPad, Wearables/Home/Accessories, AND Services
-- revenueShare must be populated for every segment using actual figures from the filing
-- Go at least 3 levels deep (company → segment → input → sub-input)
-- Mark commodity:true for raw materials, metals, energy, agricultural products
-- Include relatedTickers (other public companies) where relevant
-- Include geographicRisk where a dependency is concentrated in one region
-- Be specific and factual based on the filing text — do NOT summarize or drop segments
+- ALL revenue segments from the filing with actual revenueShare percentages
+- Minimum 5 levels deep on every branch
+- Depth-2 nodes (products): at least 3 children each
+- Depth-3 nodes (components): at least 2 children each
+- Depth-4 nodes (materials): at least 1 child
+- Leaf node names must be GRANULAR and SEARCHABLE:
+  "neodymium oxide", "niobium-titanium wire", "liquid helium", "borosilicate glass",
+  "ASML EUV lithography", "NAND 3D TLC flash", "Taiwan Strait shipping", "China rare earth processing",
+  "Bayer process alumina", "photoresist — Japan supply", "palladium — Russia supply"
+- commodity:true for any raw material, metal, chemical, gas, agricultural product
+- geographicRisk: specific country + reason (e.g. "China — 90% of rare earth oxide processing")
+- relatedTickers: direct suppliers or key players at that node
 - Return ONLY the JSON object, nothing else
 
-10-K TEXT:
+10-K TEXT (use for segment identification — expand supply chain from your own knowledge):
 ${tenKText}`
 
     const raw = await groqChat([
@@ -416,6 +467,51 @@ Return ONLY JSON.`
 })
 
 // ---------------------------------------------------------------------------
+// POST /api/markets/fetch-article
+// Server-side URL fetcher so the frontend can load articles without CORS issues
+// ---------------------------------------------------------------------------
+
+router.post('/fetch-article', async (req, res) => {
+  try {
+    const { url } = req.body
+    if (!url) return res.status(400).json({ error: 'url is required' })
+
+    const articleRes = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; MarketAnalyzer/1.0)',
+        'Accept': 'text/html,application/xhtml+xml,*/*',
+      },
+      redirect: 'follow',
+    })
+    if (!articleRes.ok) throw new Error(`Could not fetch URL (${articleRes.status})`)
+
+    const html = await articleRes.text()
+
+    // Strip HTML and extract readable text
+    let text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<nav[\s\S]*?<\/nav>/gi, '')
+      .replace(/<header[\s\S]*?<\/header>/gi, '')
+      .replace(/<footer[\s\S]*?<\/footer>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&#\d+;/g, ' ')
+      .replace(/\s{3,}/g, '\n\n')
+      .trim()
+      .slice(0, 15000)
+
+    res.json({ text, length: text.length })
+  } catch (err) {
+    console.error('[fetch-article]', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ---------------------------------------------------------------------------
 // POST /api/markets/cache-tree
 // Called internally after extract-tree to persist a tree to MongoDB.
 // Also called automatically by the /sec/:ticker route on fresh fetches.
@@ -490,6 +586,205 @@ router.get('/tree/:ticker', async (req, res) => {
     res.json({ source: 'fresh', tree, filingDate, companyName })
   } catch (err) {
     console.error('[tree]', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// POST /api/markets/analyze-news-global
+// Full pipeline: article → extract concepts → search all stored trees → return
+// affected companies with display paths showing HOW they're exposed
+// ---------------------------------------------------------------------------
+
+router.post('/analyze-news-global', async (req, res) => {
+  try {
+    const { articleText } = req.body
+    if (!articleText) return res.status(400).json({ error: 'articleText is required' })
+
+    // Step 1: Use Groq to extract granular supply chain concepts from the article.
+    // We want SPECIFIC technical/commodity/geographic concepts, not broad themes.
+    const extractSystemPrompt = `You are a supply chain analyst. Your job is to extract specific, 
+searchable supply chain concepts from news articles. Think about raw materials, specific 
+technologies, geographic chokepoints, specific companies as suppliers, manufacturing processes, 
+and regulatory frameworks. Be SPECIFIC and GRANULAR — not "semiconductors" but "TSMC 3nm", 
+not "trade war" but "rare earth export restrictions". Respond ONLY with valid JSON.`
+
+    const extractUserPrompt = `Extract supply chain impact concepts from this news article.
+
+For each concept, assess:
+- How directly the article mentions it (direct vs implied)
+- Whether it's positive or negative for companies that depend on it
+- Specific search terms someone would use to find this in a supply chain tree
+
+Return JSON:
+{
+  "articleSummary": "2-3 sentence summary of the core event",
+  "impacts": [
+    {
+      "concept": "exact term to search in supply chain trees",
+      "aliases": ["alternative search terms", "related terms"],
+      "impact": "positive|negative|neutral",
+      "magnitude": "high|medium|low",
+      "reasoning": "why this concept is affected and how",
+      "affectsUpstream": true,
+      "affectsDownstream": true
+    }
+  ]
+}
+
+Be exhaustive — include 8-15 concepts covering commodities, geographies, technologies, 
+specific companies mentioned, regulatory/policy changes, and logistics chokepoints.
+
+ARTICLE:
+${articleText}`
+
+    console.log('[analyze-news-global] Extracting concepts from article…')
+    const rawConcepts = await groqChat([
+      { role: 'system', content: extractSystemPrompt },
+      { role: 'user', content: extractUserPrompt },
+    ], { maxTokens: 2048 })
+
+    const conceptData = parseGroqJson(rawConcepts)
+    const impacts = conceptData.impacts || []
+
+    // Step 2: Build search terms — concept + all aliases
+    const allSearchTerms = []
+    for (const impact of impacts) {
+      allSearchTerms.push(impact.concept)
+      if (impact.aliases) allSearchTerms.push(...impact.aliases)
+    }
+
+    console.log(`[analyze-news-global] Searching ${allSearchTerms.length} terms across stored trees…`)
+
+    // Step 3: Pull ALL flatNodes from the DB so Groq can reason over them
+    const allDocs = await SupplyChainTree.find(
+      {},
+      { ticker: 1, companyName: 1, filingDate: 1, flatNodes: 1 }
+    ).lean()
+
+    // Build a compact node list for Groq to reason over
+    // Format: "TICKER|nodeId|depth|name|description"
+    const nodeLines = []
+    for (const doc of allDocs) {
+      for (const n of doc.flatNodes || []) {
+        nodeLines.push(`${doc.ticker}|${n.id}|${n.depth}|${n.name}|${n.description || ''}`)
+      }
+    }
+
+    console.log(`[analyze-news-global] Matching concepts against ${nodeLines.length} nodes across ${allDocs.length} companies…`)
+
+    // Step 4: Ask Groq to match concepts against node names semantically
+    const matchSystemPrompt = `You are a supply chain analyst. Given a list of supply chain impact 
+concepts and a list of company supply chain nodes, identify which nodes are affected by each concept.
+Use semantic reasoning — "NdFeB magnets" matches a node called "Permanent Magnets", 
+"rare earth export ban" matches "Neodymium" or "China sourcing" or "Dysprosium".
+Respond ONLY with valid JSON.`
+
+    const matchUserPrompt = `Match these supply chain impact concepts against the company nodes below.
+
+CONCEPTS:
+${impacts.map((imp, i) => `${i}. [${imp.impact}/${imp.magnitude}] "${imp.concept}" — ${imp.reasoning}`).join('\n')}
+
+COMPANY NODES (format: TICKER|nodeId|depth|nodeName|description):
+${nodeLines.join('\n')}
+
+Return JSON — only include nodes that are genuinely affected:
+{
+  "matches": [
+    {
+      "ticker": "MMM",
+      "nodeId": "sub_1_1_1",
+      "nodeName": "Aluminum Oxide",
+      "conceptIndex": 2,
+      "reasoning": "why this node is affected by that concept"
+    }
+  ]
+}
+
+Be thorough but precise. Return ONLY JSON.`
+
+    const rawMatches = await groqChat([
+      { role: 'system', content: matchSystemPrompt },
+      { role: 'user', content: matchUserPrompt },
+    ], { maxTokens: 2048 })
+
+    const matchData = parseGroqJson(rawMatches)
+    const matches = matchData.matches || []
+
+    console.log(`[analyze-news-global] Groq found ${matches.length} node matches`)
+
+    // Step 5: Hydrate matches with full node data from the DB docs
+    const docByTicker = {}
+    for (const doc of allDocs) docByTicker[doc.ticker] = doc
+
+    const byTicker = {}
+    for (const match of matches) {
+      const doc = docByTicker[match.ticker]
+      if (!doc) continue
+
+      const node = (doc.flatNodes || []).find(n => n.id === match.nodeId)
+      if (!node) continue
+
+      const imp = impacts[match.conceptIndex]
+      if (!imp) continue
+
+      if (!byTicker[match.ticker]) {
+        byTicker[match.ticker] = {
+          ticker: match.ticker,
+          companyName: doc.companyName,
+          filingDate: doc.filingDate,
+          exposures: [],
+          overallImpact: 'neutral',
+          maxDepth: 0,
+        }
+      }
+
+      byTicker[match.ticker].exposures.push({
+        matchedNode: node.name,
+        displayPath: node.displayPath,
+        depth: node.depth,
+        concept: imp.concept,
+        impact: imp.impact,
+        magnitude: imp.magnitude,
+        reasoning: match.reasoning,
+        geographicRisk: node.geographicRisk || null,
+        commodity: node.commodity || false,
+        revenueShare: node.revenueShare || null,
+      })
+
+      if (imp.impact === 'negative') byTicker[match.ticker].overallImpact = 'negative'
+      else if (imp.impact === 'positive' && byTicker[match.ticker].overallImpact === 'neutral') {
+        byTicker[match.ticker].overallImpact = 'positive'
+      }
+      byTicker[match.ticker].maxDepth = Math.max(byTicker[match.ticker].maxDepth, node.depth)
+    }
+
+    // Step 5: Deduplicate exposures and sort companies
+    const results = Object.values(byTicker)
+      .map(company => ({
+        ...company,
+        // Remove duplicate exposures (same node matched by multiple aliases)
+        exposures: company.exposures.filter(
+          (e, i, arr) => arr.findIndex(x => x.matchedNode === e.matchedNode && x.concept === e.concept) === i
+        ),
+      }))
+      .sort((a, b) => {
+        // Sort by: negative impact first, then by max depth (most indirect = most surprising), then exposure count
+        if (a.overallImpact !== b.overallImpact) {
+          const order = { negative: 0, positive: 1, neutral: 2 }
+          return order[a.overallImpact] - order[b.overallImpact]
+        }
+        return b.maxDepth - a.maxDepth || b.exposures.length - a.exposures.length
+      })
+
+    res.json({
+      articleSummary: conceptData.articleSummary,
+      conceptsExtracted: impacts,
+      companiesAffected: results.length,
+      results,
+    })
+  } catch (err) {
+    console.error('[analyze-news-global]', err.message)
     res.status(500).json({ error: err.message })
   }
 })
@@ -608,3 +903,13 @@ async function getLatest10KMeta(cik, ticker) {
 }
 
 module.exports = router
+
+// DEBUG — remove after testing
+router.get('/debug-all-nodes', async (req, res) => {
+  const docs = await SupplyChainTree.find({}, { ticker: 1, 'flatNodes.name': 1, 'flatNodes.description': 1, 'flatNodes.depth': 1 })
+  const result = {}
+  for (const doc of docs) {
+    result[doc.ticker] = doc.flatNodes.map(n => `[d${n.depth}] ${n.name}`)
+  }
+  res.json(result)
+})
