@@ -544,6 +544,17 @@ router.post('/cache-tree', async (req, res) => {
 // GET /api/markets/tree/:ticker
 // Return cached tree if available and up to date; otherwise build + cache it.
 // ---------------------------------------------------------------------------
+async function buildTreeFromText(ticker, companyName, tenKText) {
+  const systemPrompt = `You are a supply chain intelligence expert...` // same as before
+  const userPrompt = `...` // same as before
+
+  const raw = await groqChat([
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt },
+  ], { maxTokens: 2048 })
+
+  return parseGroqJson(raw)
+}
 
 router.get('/tree/:ticker', async (req, res) => {
   try {
@@ -568,13 +579,7 @@ router.get('/tree/:ticker', async (req, res) => {
     const html = await docRes.text()
     const text = extractTextFromHtml(html)
 
-    const treeRes = await fetch(`http://localhost:${process.env.PORT || 3000}/api/markets/extract-tree`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker, companyName, tenKText: text }),
-    })
-    if (!treeRes.ok) throw new Error('extract-tree failed')
-    const tree = await treeRes.json()
+    const tree = await buildTreeFromText(ticker, companyName, text)
 
     const flatNodes = SupplyChainTree.flattenTree(tree)
     await SupplyChainTree.findOneAndUpdate(
@@ -589,6 +594,8 @@ router.get('/tree/:ticker', async (req, res) => {
     res.status(500).json({ error: err.message })
   }
 })
+
+
 
 // ---------------------------------------------------------------------------
 // POST /api/markets/analyze-news-global
