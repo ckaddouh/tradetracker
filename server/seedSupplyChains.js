@@ -17,6 +17,8 @@ const fs = require('fs')
 const path = require('path')
 const SupplyChainTree = require('./models/SupplyChainTree.js')  // adjust path as needed
 
+const API = import.meta.env.VITE_API_URL
+
 // ─── S&P 500 tickers ─────────────────────────────────────────────────────────
 // Full list — update periodically as index composition changes
 const SP500 = ["MMM", "ABT", "ABBV", "ADBE", "AMD", "AFL",  "AOS", "A",'ACN','AES','A','APD','ABNB',
@@ -67,7 +69,7 @@ const SP500 = ["MMM", "ABT", "ABBV", "ADBE", "AMD", "AFL",  "AOS", "A",'ACN','AE
 const CONCURRENCY    = 1      // parallel tickers at once — SEC allows ~10 req/s
 const DELAY_MS       = 30000   // ms between batches
 const PROGRESS_FILE  = path.join(__dirname, 'seed-progress.json')
-const API_BASE       = process.env.API_BASE || 'http://localhost:3000/api/markets'
+const API_BASE       = process.env.API_BASE || `${API}/api/markets`
 
 // ─── Progress tracking ────────────────────────────────────────────────────────
 function loadProgress() {

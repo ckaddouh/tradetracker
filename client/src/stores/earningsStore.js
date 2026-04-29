@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import axios from 'axios'
 import { useAuthStore } from './authStore'
 
+const API = import.meta.env.VITE_API_URL
+
 export const useEarningsStore = defineStore('earnings', {
   state: () => ({
     watches: [],
@@ -22,35 +24,35 @@ export const useEarningsStore = defineStore('earnings', {
     },
 
     async fetchCalendar() {
-      const res = await axios.get('http://localhost:3000/api/earnings/calendar', {
+      const res = await axios.get(`${API}/api/earnings/calendar`, {
         headers: this.getHeaders()
       })
       this.calendar = res.data
     },
 
     async fetchWatches() {
-      const res = await axios.get('http://localhost:3000/api/earnings', {
+      const res = await axios.get(`${API}/api/earnings`, {
         headers: this.getHeaders()
       })
       this.watches = res.data
     },
 
     async lookupTicker(ticker) {
-      const res = await axios.get(`http://localhost:3000/api/earnings/lookup/${ticker}`, {
+      const res = await axios.get(`${API}/api/earnings/lookup/${ticker}`, {
         headers: this.getHeaders()
       })
       return res.data
     },
 
     async addWatch(data) {
-      const res = await axios.post('http://localhost:3000/api/earnings', data, {
+      const res = await axios.post(`${API}/api/earnings`, data, {
         headers: this.getHeaders()
       })
       this.watches.push(res.data)
     },
 
     async updateWatch(id, updates) {
-      const res = await axios.patch(`http://localhost:3000/api/earnings/${id}`, updates, {
+      const res = await axios.patch(`${API}/api/earnings/${id}`, updates, {
         headers: this.getHeaders()
       })
       const index = this.watches.findIndex(w => w._id === id)
@@ -58,14 +60,14 @@ export const useEarningsStore = defineStore('earnings', {
     },
 
     async deleteWatch(id) {
-      await axios.delete(`http://localhost:3000/api/earnings/${id}`, {
+      await axios.delete(`${API}/api/earnings/${id}`, {
         headers: this.getHeaders()
       })
       this.watches = this.watches.filter(w => w._id !== id)
     },
 
     async markCompleted(id) {
-      const res = await axios.patch(`http://localhost:3000/api/earnings/${id}`, 
+      const res = await axios.patch(`${API}/api/earnings/${id}`, 
         { status: 'completed' },
         { headers: this.getHeaders() }
       )

@@ -10,7 +10,9 @@ const marketsRoutes = require('./routes/markets')
 
 const app = express()
 
-app.use(cors({ origin: 'http://localhost:5173' }))
+app.use(cors({
+  origin: ['http://localhost:5173', 'https://ckaddouh.github.io']
+}))
 app.use(express.json())
 
 
