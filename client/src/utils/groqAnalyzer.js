@@ -1,7 +1,7 @@
 // Client-side market analyzer — calls your Express server, never Groq directly.
 // All three functions mirror the server routes in server/routes/markets.js
 
-const BASE = '/api/markets'
+const BASE = `${import.meta.env.VITE_API_URL}/api/markets`
 
 async function post(endpoint, body) {
   const res = await fetch(`${BASE}${endpoint}`, {
