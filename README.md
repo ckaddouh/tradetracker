@@ -1,0 +1,1 @@
+A tool to track your trade ideas and come up with new ones. Test it out at: 
