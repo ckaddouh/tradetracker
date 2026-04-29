@@ -1,11 +1,11 @@
-# STEP-BY-STEP-GUIDE.md — TradeTrackr
+# STEP-BY-STEP-GUIDE.md — TradeTracker
 
-This is a personal guide to setting up and rebuilding TradeTrackr from scratch. 
+This is a personal guide to setting up and rebuilding TradeTracker from scratch. 
 ---
 
 ## What this app is
 
-TradeTrackr is a full-stack trading journal and market analysis tool. Users can log trade ideas (ticker, direction, time horizon, reasoning), track open and closed positions with live P&L from Yahoo Finance, watch upcoming earnings events, and run a supply chain analyzer that uses SEC EDGAR 10-K filings and a Groq LLM to map out which companies are exposed to a given news event.
+TradeTracker is a full-stack trading journal and market analysis tool. Users can log trade ideas (ticker, direction, time horizon, reasoning), track open and closed positions with live P&L from Yahoo Finance, watch upcoming earnings events, and run a supply chain analyzer that uses SEC EDGAR 10-K filings and a Groq LLM to map out which companies are exposed to a given news event.
 
 The stack is: **Vue 3 + Pinia** on the front-end, **Node/Express** on the back-end, **MongoDB Atlas** as the database, and a handful of external APIs (Yahoo Finance, SEC EDGAR, and Groq).
 
@@ -197,7 +197,7 @@ With both servers running:
    - `PORT` (Railway sets this automatically but it doesn't hurt to include it)
 5. Railway will deploy automatically. Once it's live, copy the generated URL — it'll look like `https://your-app.up.railway.app`
 
-Check it's working by visiting `https://your-app.up.railway.app/` — you should get the `{ "message": "TradeTrackr server is running" }` response.
+Check it's working by visiting `https://your-app.up.railway.app/` — you should get the `{ "message": "TradeTracker server is running" }` response.
 
 ### Configure CORS for production
 

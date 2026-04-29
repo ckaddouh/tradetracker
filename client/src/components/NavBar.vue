@@ -1,6 +1,6 @@
 <template>
     <nav class="navbar">
-      <RouterLink to="/" class="brand">TradeTrackr</RouterLink>
+      <RouterLink to="/" class="brand">TradeTracker</RouterLink>
       <div class="nav-links">
         <template v-if="authStore.isLoggedIn">
           <span class="email">{{ authStore.email }}</span>

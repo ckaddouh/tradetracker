@@ -15,7 +15,7 @@ app.use(express.json())
 
 
 app.get('/', (req, res) => {
-  res.json({ message: 'TradeTrackr server is running' })
+  res.json({ message: 'TradeTracker server is running' })
 })
 
 app.use('/api/auth', authRoutes)

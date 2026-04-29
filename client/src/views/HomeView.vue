@@ -1,6 +1,6 @@
 <template>
     <div class="home">
-      <h1>Welcome to TradeTrackr</h1>
+      <h1>Welcome to TradeTracker</h1>
       <p>Track your trade ideas, measure your conviction, review your outcomes.</p>
       <div class="actions">
         <RouterLink to="/register" class="btn-primary">Get Started</RouterLink>

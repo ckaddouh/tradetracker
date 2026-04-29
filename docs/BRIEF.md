@@ -1,6 +1,6 @@
-**Project name:** TradeTrackr
+**Project name:** TradeTracker
 
-**The problem:** TradeTrackr is a web application that lets you track your trade ideas and actually see how they play out without risking real money. You can check on the performance of your ideas daily and see how your portfolio has been doing historically. This is for the new/intermediate investor who wants to sharpen their skills. 
+**The problem:** TradeTracker is a web application that lets you track your trade ideas and actually see how they play out without risking real money. You can check on the performance of your ideas daily and see how your portfolio has been doing historically. This is for the new/intermediate investor who wants to sharpen their skills. 
 
 **It will have:**
 - A page to view your journal entries (which will include a stock name, position, reasoning, and date)

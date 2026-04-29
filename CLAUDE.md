@@ -1,4 +1,4 @@
-# TradeTrackr
+# TradeTracker
 
 ## What this is
 A web application for tracking paper trade ideas and monitoring their performance over time.

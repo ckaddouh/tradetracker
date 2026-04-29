@@ -23,7 +23,6 @@
           <div class="card-header">
             <div class="ticker-info">
               <span class="ticker">{{ watch.ticker }}</span>
-              <span v-if="watch.view" :class="['view-badge', watch.view]">{{ watch.view }}</span>
             </div>
             <div class="card-meta">
               <span class="report-date">{{ watch.reportDate ? formatDate(watch.reportDate) : 'Date TBD' }}</span>
@@ -39,11 +38,6 @@
           </div>
           <p v-if="watch.notes" class="notes">{{ watch.notes }}</p>
           <div class="post-earnings">
-            <div class="stat-pill">
-              <span class="stat-label">Your View</span>
-              <span v-if="watch.view" :class="['view-badge', watch.view]">{{ watch.view }}</span>
-              <span v-else class="pending-badge">—</span>
-            </div>
             <div class="stat-pill">
               <span class="stat-label">Result</span>
               <span v-if="watch.result" :class="['result-badge', watch.result]">{{ resultLabel(watch.result) }}</span>
@@ -84,15 +78,6 @@
               <input v-model="form.reportDate" type="date" />
             </div>
             <div class="form-group">
-              <label>Your View</label>
-              <select v-model="form.view">
-                <option value="">No view yet</option>
-                <option value="bullish">Bullish</option>
-                <option value="bearish">Bearish</option>
-                <option value="neutral">Neutral</option>
-              </select>
-            </div>
-            <div class="form-group">
               <label>Notes</label>
               <input v-model="form.notes" placeholder="Optional notes" />
             </div>
@@ -129,7 +114,6 @@
           <div class="card-header">
             <div class="ticker-info">
               <span class="ticker">{{ watch.ticker }}</span>
-              <span v-if="watch.view" :class="['view-badge', watch.view]">{{ watch.view }}</span>
               <span
                 v-if="watch.result || completedResults[watch.ticker]?.result"
                 :class="['result-badge', watch.result || completedResults[watch.ticker]?.result]"
@@ -290,7 +274,7 @@ const summaryLoading = ref(false)
 const summaryError = ref('')
 const summaryData = ref(null)
 
-const form = ref({ ticker: '', reportDate: '', view: '', notes: '' })
+const form = ref({ ticker: '', reportDate: '', notes: '' })
 
 let pollInterval = null
 
@@ -459,7 +443,7 @@ function schedulePolling() {
 async function quickWatch(item) {
   try {
     const reportDate = item.reportDate || (await earningsStore.lookupTicker(item.ticker)).reportDate || null
-    await earningsStore.addWatch({ ticker: item.ticker, reportDate, view: null, notes: '' })
+    await earningsStore.addWatch({ ticker: item.ticker, reportDate, notes: '' })
   } catch (err) { console.error('Failed to watch:', err) }
 }
 
@@ -505,10 +489,9 @@ async function handleSubmit() {
     await earningsStore.addWatch({
       ticker: form.value.ticker.toUpperCase(),
       reportDate,
-      view: form.value.view || null,
       notes: form.value.notes
     })
-    form.value = { ticker: '', reportDate: '', view: '', notes: '' }
+    form.value = { ticker: '', reportDate: '', notes: '' }
     lookupMessage.value = ''
     activeTab.value = 'My Watchlist' // switch back after adding
   } catch (err) { formError.value = err.response?.data?.error || 'Failed to add watch' }
@@ -536,7 +519,7 @@ onUnmounted(() => { if (pollInterval) clearInterval(pollInterval) })
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
 h1 { font-size: 1.8rem; color: #4ade80; }
 
-.form-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
 .form-group { display: flex; flex-direction: column; gap: 0.4rem; }
 label { font-size: 0.85rem; color: #aaa; }
 input, select, textarea { padding: 0.6rem 0.8rem; background-color: #0f1117; border: 1px solid #2a2f3e; border-radius: 6px; color: #e0e0e0; font-size: 0.9rem; }
