@@ -25,7 +25,6 @@ const supplyChainTreeSchema = new mongoose.Schema({
     required: true,
     uppercase: true,
     trim: true,
-    index: true,
   },
   companyName: {
     type: String,
