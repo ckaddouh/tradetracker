@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import axios from 'axios'
 import { useAuthStore } from './authStore'
 
-const API = import.meta.env.VITE_API_URLv || ''
+const API = import.meta.env.VITE_API_URL || ''
 
 export const useTradeStore = defineStore('trades', {
   state: () => ({

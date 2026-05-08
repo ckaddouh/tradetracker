@@ -17,7 +17,7 @@ const fs = require('fs')
 const path = require('path')
 const SupplyChainTree = require('./models/SupplyChainTree.js')  // adjust path as needed
 
-const API = import.meta.env.VITE_API_URL
+const API = import.meta.env.VITE_API_URL || ''
 
 // ─── S&P 500 tickers ─────────────────────────────────────────────────────────
 // Full list — update periodically as index composition changes

@@ -404,7 +404,6 @@
       <p class="news-hint">
         LASSO regression against ~65 FRED macro series to find which
         economic factors statistically drive a stock's weekly returns.
-        No AI — pure econometrics.
       </p>
 
       <div class="field-group">
@@ -602,7 +601,8 @@ import DependencyGraph from '../components/DependencyGraph.vue'
 import NodePanel from '../components/NodePanel.vue'
 import { getOrBuildTree, findExposedCompanies, analyzeNewsArticle } from '../utils/groqAnalyzer.js'
 
-const API = `${import.meta.env.VITE_API_URL}/api/markets`
+const API = `${import.meta.env.VITE_API_URL || ''}/api/markets`
+
 
 // ── Existing state ────────────────────────────────────────────────────────────
 const tickerInput    = ref('')

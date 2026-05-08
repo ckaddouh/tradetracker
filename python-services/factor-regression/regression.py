@@ -173,8 +173,11 @@ def build_factor_matrix(start: str, end: str, lags: list[int]) -> pd.DataFrame:
         if s is not None and len(s) > 10:
             # Compute week-over-week % change for stationary series
             s_weekly = s.resample("W-FRI").last().ffill()
+            if s_weekly.index.tz is not None:
+                s_weekly.index = s_weekly.index.tz_localize(None)
             # Use returns (% change) to make stationary
             s_ret = s_weekly.pct_change()
+            s_ret = s_ret.replace([np.inf, -np.inf], np.nan)
             raw[series_id] = s_ret
 
     factor_df = pd.DataFrame(raw)
@@ -186,17 +189,24 @@ def build_factor_matrix(start: str, end: str, lags: list[int]) -> pd.DataFrame:
         shifted.columns = [f"{col}_lag{lag}w" for col in factor_df.columns]
         lagged_frames.append(shifted)
 
-    return pd.concat(lagged_frames, axis=1)
+    result = pd.concat(lagged_frames, axis=1)
+    # Drop columns where more than 50% of values are NaN
+    result = result.dropna(axis=1, thresh=int(len(result) * 0.5))
+    return result
 
 
 def fetch_stock_returns(ticker: str, start: str, end: str) -> pd.Series:
-    """Weekly % returns for the stock."""
     data = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
     if data.empty:
         raise ValueError(f"No price data found for {ticker}")
-    weekly = data["Close"].resample("W-FRI").last()
+    close = data["Close"]
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+    weekly = close.resample("W-FRI").last()
+    # Strip timezone so it aligns with FRED data
+    if weekly.index.tz is not None:
+        weekly.index = weekly.index.tz_localize(None)
     return weekly.pct_change().rename(ticker)
-
 
 def run_lasso(X: pd.DataFrame, y: pd.Series, top_n: int):
     """
@@ -204,7 +214,11 @@ def run_lasso(X: pd.DataFrame, y: pd.Series, top_n: int):
     Returns (model, scaler, feature_names, r2, r2_adj, y_pred)
     """
     # Align and drop NaNs
-    df = pd.concat([y, X], axis=1).dropna()
+    df = pd.concat([y, X], axis=1)
+    df = df.replace([np.inf, -np.inf], np.nan)
+    df = df.dropna(axis=1, thresh=int(len(df) * 0.5))
+    df = df.dropna(axis=0)
+   
     y_clean = df.iloc[:, 0]
     X_clean = df.iloc[:, 1:]
 
@@ -219,9 +233,18 @@ def run_lasso(X: pd.DataFrame, y: pd.Series, top_n: int):
         cv=tscv,
         max_iter=10000,
         n_alphas=100,
+        alphas=np.logspace(-6, -1, 100),  # force smaller alphas
         random_state=42,
     )
     lasso_cv.fit(X_scaled, y_clean)
+
+    if np.all(lasso_cv.coef_ == 0):
+        print("WARNING: All coefficients zero, refitting with smallest alpha")
+        fallback = Lasso(alpha=1e-6, max_iter=10000)
+        fallback.fit(X_scaled, y_clean)
+        y_pred = pd.Series(fallback.predict(X_scaled), index=y_clean.index)
+        # patch coef_ so downstream code works
+        lasso_cv.coef_ = fallback.coef_
 
     y_pred = pd.Series(lasso_cv.predict(X_scaled), index=y_clean.index)
 
@@ -265,6 +288,33 @@ async def factor_regression(req: RegressionRequest):
         )
     except ValueError as e:
         raise HTTPException(404, str(e))
+    
+    print(f"Factor matrix shape: {factor_df.shape}")
+    print(f"Factor matrix date range: {factor_df.index.min()} to {factor_df.index.max()}")
+    print(f"Stock returns shape: {stock_returns.shape}")
+    print(f"Stock returns date range: {stock_returns.index.min()} to {stock_returns.index.max()}")
+    print(f"Non-null factor columns: {factor_df.notna().any().sum()}")
+
+    # Check overlap
+    combined = pd.concat([stock_returns, factor_df], axis=1).dropna()
+    print(f"Combined shape after dropna: {combined.shape}")
+
+    print(f"Factor index type: {type(factor_df.index)}")
+    print(f"Factor index dtype: {factor_df.index.dtype}")
+    print(f"Stock index type: {type(stock_returns.index)}")
+    print(f"Stock index dtype: {stock_returns.index.dtype}")
+    print(f"Factor sample dates: {factor_df.index[:3].tolist()}")
+    print(f"Stock sample dates: {stock_returns.index[:3].tolist()}")
+
+    # Check if any dates actually match
+    overlap = factor_df.index.intersection(stock_returns.index)
+    print(f"Overlapping dates: {len(overlap)}")
+
+    combined_check = pd.concat([stock_returns, factor_df], axis=1)
+    combined_check = combined_check.dropna(axis=1, thresh=int(len(combined_check) * 0.5))
+    combined_check = combined_check.dropna(axis=0)
+    print(f"Combined after lenient dropna: {combined_check.shape}")
+
 
     # Run LASSO
     try:

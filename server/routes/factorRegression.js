@@ -11,7 +11,7 @@
  *   app.use('/api/markets', factorRegressionRouter)
  */
 
-import express from 'express'
+const express = require('express')
 
 const router = express.Router()
 
@@ -111,4 +111,4 @@ router.post('/factor-regression', async (req, res) => {
   return res.status(pythonRes.status).json(data)
 })
 
-export default router
+module.exports = router

@@ -27,7 +27,7 @@ app.use('/api/auth', authRoutes)
 app.use('/api/trades', requireAuth, tradeRoutes)
 app.use('/api/earnings', requireAuth, earningsRoutes)
 app.use('/api/markets', requireAuth, marketsRoutes)
-app.use('/api/factor-regression', requireAuth, regressionRoutes)
+app.use('/api/markets', requireAuth, regressionRoutes)
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => {
