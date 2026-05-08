@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import axios from 'axios'
 import { useAuthStore } from './authStore'
 
-const API = import.meta.env.VITE_API_URL
+const API = import.meta.env.VITE_API_URLv || ''
 
 export const useTradeStore = defineStore('trades', {
   state: () => ({
@@ -24,7 +24,8 @@ export const useTradeStore = defineStore('trades', {
       const res = await axios.get(`${API}/api/trades`, {
         headers: this.getHeaders()
       })
-      this.trades = res.data
+      // Guard against non-array responses
+      this.trades = Array.isArray(res.data) ? res.data : res.data.trades ?? []
     },
 
     async createTrade(tradeData) {

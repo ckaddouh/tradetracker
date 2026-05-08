@@ -314,7 +314,7 @@ Return JSON:
 
 Rules:
 - ALL revenue segments from the filing with actual revenueShare percentages
-- Minimum 5 levels deep on every branch
+- Minimum 4 levels deep on every branch
 - Depth-2 nodes (products): at least 3 children each
 - Depth-3 nodes (components): at least 2 children each
 - Depth-4 nodes (materials): at least 1 child
@@ -333,7 +333,7 @@ ${tenKText}`
     const raw = await groqChat([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt },
-    ], { maxTokens: 2048 })
+    ], { maxTokens: 8192 })
 
     const tree = parseGroqJson(raw)
     res.json(tree)
@@ -545,13 +545,119 @@ router.post('/cache-tree', async (req, res) => {
 // Return cached tree if available and up to date; otherwise build + cache it.
 // ---------------------------------------------------------------------------
 async function buildTreeFromText(ticker, companyName, tenKText) {
-  const systemPrompt = `You are a supply chain intelligence expert...` // same as before
-  const userPrompt = `...` // same as before
+  const systemPrompt = `You are a supply chain analyst. Your job is to extract specific, 
+    searchable supply chain concepts from news articles. Think about raw materials, specific 
+    technologies, geographic chokepoints, specific companies as suppliers, manufacturing processes, 
+    and regulatory frameworks. Be SPECIFIC and GRANULAR — not "semiconductors" but "TSMC 3nm", 
+    not "trade war" but "rare earth export restrictions". Respond ONLY with valid JSON.`
+  const userPrompt = `You are building a deep supply chain dependency tree for ${companyName} (${ticker}).
+
+Your job has TWO phases:
+
+PHASE 1 — Read the 10-K to identify all revenue segments and the products/services in each.
+
+PHASE 2 — For each product or service, use your own expert knowledge of how that product is
+physically made to expand the tree downward into real-world components, materials, and suppliers.
+Do NOT limit yourself to what the 10-K mentions about suppliers.
+
+Examples of the depth required:
+- 10-K says "MRI machines" → YOU expand: superconducting magnets → niobium-titanium wire →
+  niobium mining (Brazil, 80% global supply) + liquid helium cooling (Qatar/US) + gradient copper
+  windings + RF amplifiers + rare earth shim magnets → neodymium/dysprosium sourcing (China 90%)
+- 10-K says "semiconductors" → YOU expand: photolithography → EUV machines (ASML monopoly) →
+  photoresist (JSR/Shin-Etsu, Japan) → ultra-pure water → CMP slurries → rare earth dopants
+- 10-K says "abrasives" → YOU expand: aluminum oxide → bauxite mining → Bayer process →
+  calcination → China export controls on processed alumina
+
+This tree is used to detect indirect exposure to news events. If a news article mentions
+"helium shortage", the system must find it under MRI machines in Abbott's tree without the
+article saying "Abbott" or "MRI". The leaf nodes must contain the real physical/chemical inputs.
+
+Return JSON:
+{
+  "id": "root",
+  "name": "${companyName}",
+  "ticker": "${ticker}",
+  "type": "company",
+  "description": "brief company description",
+  "children": [
+    {
+      "id": "seg_1",
+      "name": "Segment Name",
+      "type": "segment",
+      "revenueShare": "34%",
+      "description": "what this segment sells",
+      "children": [
+        {
+          "id": "inp_1_1",
+          "name": "Product or Major System",
+          "type": "input",
+          "description": "what this product is",
+          "commodity": false,
+          "geographicRisk": null,
+          "relatedTickers": [],
+          "children": [
+            {
+              "id": "inp_1_1_1",
+              "name": "Physical Component or Subsystem",
+              "type": "input",
+              "description": "specific technical description",
+              "commodity": false,
+              "geographicRisk": "Japan-dependent",
+              "relatedTickers": ["ASML"],
+              "children": [
+                {
+                  "id": "inp_1_1_1_1",
+                  "name": "Raw Material or Critical Supplier",
+                  "type": "input",
+                  "description": "e.g. niobium-titanium alloy wire, 80% sourced from CBMM Brazil",
+                  "commodity": true,
+                  "geographicRisk": "Brazil-dependent",
+                  "relatedTickers": [],
+                  "children": [
+                    {
+                      "id": "inp_1_1_1_1_1",
+                      "name": "Upstream factor or geopolitical chokepoint",
+                      "type": "input",
+                      "description": "e.g. Brazilian niobium export policy, CBMM pricing power",
+                      "commodity": true,
+                      "geographicRisk": "Brazil-dependent",
+                      "relatedTickers": [],
+                      "children": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+
+Rules:
+- ALL revenue segments from the filing with actual revenueShare percentages
+- Minimum 4 levels deep on every branch
+- Depth-2 nodes (products): at least 3 children each
+- Depth-3 nodes (components): at least 2 children each
+- Depth-4 nodes (materials): at least 1 child
+- Leaf node names must be GRANULAR and SEARCHABLE:
+  "neodymium oxide", "niobium-titanium wire", "liquid helium", "borosilicate glass",
+  "ASML EUV lithography", "NAND 3D TLC flash", "Taiwan Strait shipping", "China rare earth processing",
+  "Bayer process alumina", "photoresist — Japan supply", "palladium — Russia supply"
+- commodity:true for any raw material, metal, chemical, gas, agricultural product
+- geographicRisk: specific country + reason (e.g. "China — 90% of rare earth oxide processing")
+- relatedTickers: direct suppliers or key players at that node
+- Return ONLY the JSON object, nothing else
+
+10-K TEXT (use for segment identification — expand supply chain from your own knowledge):
+${tenKText}`
 
   const raw = await groqChat([
     { role: 'system', content: systemPrompt },
     { role: 'user', content: userPrompt },
-  ], { maxTokens: 2048 })
+  ], { maxTokens: 8192 })
 
   return parseGroqJson(raw)
 }

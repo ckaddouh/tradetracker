@@ -1,4 +1,4 @@
-const BASE = `${import.meta.env.VITE_API_URL}/api/markets`
+const BASE = `${import.meta.env.VITE_API_URL || ''}/api/markets`
 
 async function get(endpoint) {
   const res = await fetch(`${BASE}${endpoint}`, {

@@ -399,8 +399,7 @@
 import { ref, reactive, computed } from 'vue'
 import DependencyGraph from '../components/DependencyGraph.vue'
 import NodePanel from '../components/NodePanel.vue'
-import { fetchCompany10K } from '../utils/secEdgar.js'
-import { extractDependencyTree, findExposedCompanies, analyzeNewsArticle } from '../utils/groqAnalyzer.js'
+import { getOrBuildTree, findExposedCompanies, analyzeNewsArticle } from '../utils/groqAnalyzer.js'
 
 const API = `${import.meta.env.VITE_API_URL}/api/markets`
 
@@ -529,11 +528,9 @@ async function loadCompany() {
   tree.value = null
   selectedNode.value = null
   try {
-    loadingStage.value = 'Fetching 10-K from SEC EDGAR...'
-    const { text, name, filingDate } = await fetchCompany10K(tickerInput.value)
-    loadingStage.value = `Extracting dependency tree with Groq (${name})...`
-    const extracted = await extractDependencyTree(tickerInput.value, name, text)
-    tree.value = extracted
+    loadingStage.value = 'Checking cache / fetching 10-K from SEC...'
+    const result = await getOrBuildTree(tickerInput.value)
+    tree.value = result.tree        // getOrBuildTree returns { source, tree, filingDate, companyName }
     loadingStage.value = ''
   } catch (e) {
     error.value = e.message || 'Failed to load company data'

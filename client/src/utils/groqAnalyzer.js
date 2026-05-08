@@ -1,7 +1,7 @@
 // Client-side market analyzer — calls your Express server, never Groq directly.
 // All three functions mirror the server routes in server/routes/markets.js
 
-const BASE = `${import.meta.env.VITE_API_URL}/api/markets`
+const BASE = `${import.meta.env.VITE_API_URL || ''}/api/markets`
 console.log('API BASE:', BASE)
 
 async function post(endpoint, body) {
@@ -25,6 +25,17 @@ async function post(endpoint, body) {
  */
 export async function extractDependencyTree(ticker, companyName, tenKText) {
   return post('/extract-tree', { ticker, companyName, tenKText })
+}
+
+export async function getOrBuildTree(ticker) {
+  const res = await fetch(`${BASE}/tree/${ticker}`, {
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem('token')}`,
+    },
+  })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error || `Server error ${res.status}`)
+  return data
 }
 
 /**

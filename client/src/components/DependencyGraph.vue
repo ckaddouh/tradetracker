@@ -2,49 +2,76 @@
   <div class="graph-wrapper" ref="wrapperRef">
     <svg ref="svgRef" :width="width" :height="height">
       <defs>
-        <marker id="arrow" markerWidth="8" markerHeight="8" refX="16" refY="3" orient="auto">
-          <path d="M0,0 L0,6 L8,3 z" fill="#2a2f3e" />
+        <marker id="arrow" markerWidth="6" markerHeight="6" refX="8" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="#2a3550" />
         </marker>
-        <filter id="glow">
-          <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-          <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
-        </filter>
+        <marker id="arrow-hl" markerWidth="6" markerHeight="6" refX="8" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="#4ade80" />
+        </marker>
       </defs>
       <g ref="gRef">
-        <line
+        <!-- Links -->
+        <path
           v-for="link in links"
           :key="link.id"
-          :x1="link.source.x" :y1="link.source.y"
-          :x2="link.target.x" :y2="link.target.y"
-          class="graph-link"
-          :class="{ highlighted: highlightedIds.has(link.source.id) && highlightedIds.has(link.target.id) }"
-          marker-end="url(#arrow)"
+          :d="link.path"
+          fill="none"
+          :class="['graph-link', { highlighted: isLinkHighlighted(link) }]"
+          :marker-end="isLinkHighlighted(link) ? 'url(#arrow-hl)' : 'url(#arrow)'"
         />
+        <!-- Nodes -->
         <g
           v-for="node in nodes"
-          :key="node.id"
+          :key="node.data.id"
           :transform="`translate(${node.x},${node.y})`"
           class="graph-node"
-          :class="[node.type, { highlighted: highlightedIds.has(node.id), dimmed: highlightedIds.size > 0 && !highlightedIds.has(node.id) }]"
-          @click="$emit('nodeClick', node)"
-          @mouseenter="$emit('nodeHover', node)"
+          :class="[
+            node.data.type,
+            {
+              highlighted: highlightedIds.has(node.data.id),
+              dimmed: highlightedIds.size > 0 && !highlightedIds.has(node.data.id)
+            }
+          ]"
+          @click="handleNodeClick(node)"
+          @mouseenter="$emit('nodeHover', node.data)"
           @mouseleave="$emit('nodeHover', null)"
         >
+          <!-- Invisible hit-area circle — prevents off-click issues -->
           <circle
-            :r="nodeRadius(node)"
-            :class="['node-circle', node.type]"
-            :filter="highlightedIds.has(node.id) ? 'url(#glow)' : ''"
+            :r="nodeRadius(node.data) + 8"
+            fill="transparent"
+            stroke="none"
+            style="pointer-events: all"
           />
-          <text class="node-label" :y="nodeRadius(node) + 14" text-anchor="middle">
-            {{ truncate(node.name, 18) }}
-          </text>
-          <text v-if="node.revenueShare" class="node-revenue" :y="nodeRadius(node) + 26" text-anchor="middle">
-            {{ node.revenueShare }}
-          </text>
-          <text v-if="node.commodity" class="node-tag" :y="-nodeRadius(node) - 6" text-anchor="middle">◆</text>
+          <circle
+            :r="nodeRadius(node.data)"
+            :class="['node-circle', node.data.type]"
+          />
+          <text
+            class="node-label"
+            :y="nodeRadius(node.data) + 13"
+            text-anchor="middle"
+          >{{ truncate(node.data.name, 16) }}</text>
+          <text
+            v-if="node.data.revenueShare"
+            class="node-revenue"
+            :y="nodeRadius(node.data) + 24"
+            text-anchor="middle"
+          >{{ node.data.revenueShare }}</text>
+          <text
+            v-if="node.data.commodity"
+            class="node-tag"
+            :y="-nodeRadius(node.data) - 5"
+            text-anchor="middle"
+          >◆</text>
         </g>
       </g>
     </svg>
+    <div class="graph-controls">
+      <button class="ctrl-btn" @click="resetZoom" title="Reset view">⌂</button>
+      <button class="ctrl-btn" @click="zoomIn" title="Zoom in">+</button>
+      <button class="ctrl-btn" @click="zoomOut" title="Zoom out">−</button>
+    </div>
     <div class="graph-legend">
       <span class="legend-item company">● Company</span>
       <span class="legend-item segment">● Segment</span>
@@ -55,7 +82,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch, computed } from 'vue'
+import { ref, onMounted, watch, nextTick } from 'vue'
 import * as d3 from 'd3'
 
 const props = defineProps({
@@ -65,98 +92,156 @@ const props = defineProps({
 
 const emit = defineEmits(['nodeClick', 'nodeHover'])
 
-const svgRef = ref(null)
-const gRef = ref(null)
+const svgRef     = ref(null)
+const gRef       = ref(null)
 const wrapperRef = ref(null)
-const width = ref(800)
-const height = ref(600)
-const nodes = ref([])
-const links = ref([])
+const width      = ref(900)
+const height     = ref(600)
+const nodes      = ref([])
+const links      = ref([])
 
-let simulation = null
+let zoomBehavior = null
+let currentTransform = d3.zoomIdentity
 
-function flattenTree(node, parent = null, depth = 0) {
-  const n = { ...node, depth, fx: depth === 0 ? width.value / 2 : null, fy: depth === 0 ? height.value / 2 : null }
-  const result = [n]
-  if (node.children) {
-    for (const child of node.children) {
-      result.push(...flattenTree(child, node, depth + 1))
-    }
-  }
-  return result
-}
+// ── Layout constants ──────────────────────────────────────────────────────────
+const NODE_SEP_X = 52   // horizontal gap between siblings
+const NODE_SEP_Y = 110  // vertical gap between levels
 
-function buildLinks(node) {
-  const result = []
-  if (node.children) {
-    for (const child of node.children) {
-      result.push({ id: `${node.id}-${child.id}`, source: node.id, target: child.id })
-      result.push(...buildLinks(child))
-    }
-  }
-  return result
-}
-
-function nodeRadius(node) {
-  if (node.type === 'company') return 28
-  if (node.type === 'segment') return 20
-  return 13
+function nodeRadius(d) {
+  if (d.type === 'company') return 26
+  if (d.type === 'segment') return 18
+  return 11 // fallback for unknown types — still visible
 }
 
 function truncate(str, n) {
   return str && str.length > n ? str.slice(0, n - 1) + '…' : str
 }
 
-function initGraph() {
-  if (!props.tree) return
+// ── Build layout ──────────────────────────────────────────────────────────────
+function buildLayout() {
+  if (!props.tree || !wrapperRef.value) return
 
-  const flatNodes = flattenTree(props.tree)
-  const flatLinks = buildLinks(props.tree)
+  width.value  = wrapperRef.value.clientWidth  || 900
+  height.value = wrapperRef.value.clientHeight || 600
 
-  // Resize
-  if (wrapperRef.value) {
-    width.value = wrapperRef.value.clientWidth || 800
-    height.value = wrapperRef.value.clientHeight || 600
-  }
+  const root = d3.hierarchy(props.tree, d => d.children)
 
-  if (simulation) simulation.stop()
-
-  simulation = d3.forceSimulation(flatNodes)
-    .force('link', d3.forceLink(flatLinks).id(d => d.id).distance(d => {
-      if (d.source.type === 'company') return 160
-      if (d.source.type === 'segment') return 120
-      return 90
-    }).strength(0.8))
-    .force('charge', d3.forceManyBody().strength(d => {
-      if (d.type === 'company') return -600
-      if (d.type === 'segment') return -300
-      return -150
-    }))
-    .force('center', d3.forceCenter(width.value / 2, height.value / 2))
-    .force('collision', d3.forceCollide().radius(d => nodeRadius(d) + 30))
-    .on('tick', () => {
-      nodes.value = [...flatNodes]
-      links.value = flatLinks.map(l => ({
-        ...l,
-        source: typeof l.source === 'object' ? l.source : flatNodes.find(n => n.id === l.source),
-        target: typeof l.target === 'object' ? l.target : flatNodes.find(n => n.id === l.target),
-      }))
+  const treeLayout = d3.tree()
+    .nodeSize([NODE_SEP_X, NODE_SEP_Y])
+    .separation((a, b) => {
+      const ar = nodeRadius(a.data)
+      const br = nodeRadius(b.data)
+      const base = a.parent === b.parent ? 1 : 1.4
+      return base + (ar + br) / NODE_SEP_X
     })
 
-  // D3 zoom
-  const svg = d3.select(svgRef.value)
-  const g = d3.select(gRef.value)
-  svg.call(d3.zoom().scaleExtent([0.3, 3]).on('zoom', e => {
-    g.attr('transform', e.transform)
+  treeLayout(root)
+
+  const allNodes = root.descendants()
+  const minX = d3.min(allNodes, d => d.x)
+  const maxX = d3.max(allNodes, d => d.x)
+  const treeWidth = maxX - minX
+
+  const offsetX = width.value / 2 - (minX + treeWidth / 2)
+  const offsetY = 60
+
+  allNodes.forEach(d => {
+    d.x += offsetX
+    d.y += offsetY
+  })
+
+  nodes.value = allNodes
+
+  links.value = root.links().map(link => ({
+    id: `${link.source.data.id}-${link.target.data.id}`,
+    source: link.source,
+    target: link.target,
+    path: smoothPath(link.source, link.target)
   }))
 }
 
+function smoothPath(source, target) {
+  const sy = source.y + nodeRadius(source.data)
+  const ty = target.y - nodeRadius(target.data)
+  const mx = (sy + ty) / 2
+  return `M${source.x},${sy} C${source.x},${mx} ${target.x},${mx} ${target.x},${ty}`
+}
+
+// ── Highlight logic ───────────────────────────────────────────────────────────
+function isLinkHighlighted(link) {
+  return (
+    props.highlightedIds.has(link.source.data.id) &&
+    props.highlightedIds.has(link.target.data.id)
+  )
+}
+
+function handleNodeClick(node) {
+  const ids = new Set()
+  let current = node
+  while (current) {
+    ids.add(current.data.id)
+    current = current.parent
+  }
+  node.descendants().forEach(d => ids.add(d.data.id))
+  emit('nodeClick', { ...node.data, _highlightIds: ids })
+}
+
+// ── Zoom ──────────────────────────────────────────────────────────────────────
+function initZoom() {
+  const svg = d3.select(svgRef.value)
+  const g   = d3.select(gRef.value)
+
+  zoomBehavior = d3.zoom()
+    .scaleExtent([0.15, 3])
+    // Only allow left-click drag and scroll wheel; ignore ctrl+scroll (browser zoom)
+    .filter(event => !event.ctrlKey && (event.type === 'wheel' || event.button === 0))
+    .on('zoom', e => {
+      currentTransform = e.transform
+      g.attr('transform', e.transform)
+    })
+
+  svg.call(zoomBehavior)
+
+  nextTick(() => fitView())
+}
+
+function fitView() {
+  if (!svgRef.value || !nodes.value.length) return
+  const allNodes = nodes.value
+  const minX = d3.min(allNodes, d => d.x) - 40
+  const maxX = d3.max(allNodes, d => d.x) + 40
+  const minY = d3.min(allNodes, d => d.y) - 40
+  const maxY = d3.max(allNodes, d => d.y) + 60
+
+  const w = maxX - minX
+  const h = maxY - minY
+  const scale = Math.min(0.9, Math.min(width.value / w, height.value / h))
+  const tx = (width.value - w * scale) / 2 - minX * scale
+  const ty = (height.value - h * scale) / 2 - minY * scale
+
+  d3.select(svgRef.value)
+    .transition().duration(500)
+    .call(zoomBehavior.transform, d3.zoomIdentity.translate(tx, ty).scale(scale))
+}
+
+function resetZoom() { fitView() }
+function zoomIn()    { d3.select(svgRef.value).transition().duration(250).call(zoomBehavior.scaleBy, 1.35) }
+function zoomOut()   { d3.select(svgRef.value).transition().duration(250).call(zoomBehavior.scaleBy, 0.75) }
+
+// ── Lifecycle ─────────────────────────────────────────────────────────────────
 onMounted(() => {
-  if (props.tree) initGraph()
+  if (props.tree) {
+    buildLayout()
+    initZoom()
+  }
 })
 
-watch(() => props.tree, (val) => {
-  if (val) initGraph()
+watch(() => props.tree, async (val) => {
+  if (val) {
+    buildLayout()
+    await nextTick()
+    fitView()
+  }
 })
 </script>
 
@@ -165,67 +250,133 @@ watch(() => props.tree, (val) => {
   width: 100%;
   height: 100%;
   position: relative;
-  background: #080c14;
-  border-radius: 12px;
+  background: #060c16;
   overflow: hidden;
 }
 
+/* Links */
 .graph-link {
-  stroke: #1e2535;
-  stroke-width: 1.5;
-  transition: stroke 0.2s;
+  stroke: #1e2b40;
+  stroke-width: 1.5px;
+  transition: stroke 0.2s, stroke-width 0.2s;
 }
-.graph-link.highlighted { stroke: #4ade8066; stroke-width: 2; }
+.graph-link.highlighted {
+  stroke: #4ade80;
+  stroke-width: 2.5px;
+}
 
-.graph-node { cursor: pointer; transition: opacity 0.2s; }
-.graph-node.dimmed { opacity: 0.25; }
+/* Nodes */
+.graph-node {
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.graph-node.dimmed { opacity: 0.2; }
 
+/* Fallback so unknown node types are never invisible */
 .node-circle {
-  transition: r 0.2s, fill 0.2s;
+  fill: #1a1a2e;
+  stroke: #555;
+  stroke-width: 1.5;
+  transition: fill 0.2s, stroke 0.2s, r 0.2s;
 }
-.node-circle.company { fill: #1a3a2a; stroke: #4ade80; stroke-width: 2.5; }
-.node-circle.segment { fill: #1a2535; stroke: #60a5fa; stroke-width: 2; }
-.node-circle.input { fill: #1e1a2d; stroke: #a78bfa; stroke-width: 1.5; }
+.node-circle.company {
+  fill: #0e2a1a;
+  stroke: #4ade80;
+  stroke-width: 2.5;
+}
+.node-circle.segment {
+  fill: #0e1e30;
+  stroke: #60a5fa;
+  stroke-width: 2;
+}
+.node-circle.input {
+  fill: #15112a;
+  stroke: #9b87f5;
+  stroke-width: 1.5;
+}
 
-.graph-node:hover .node-circle.company { fill: #1f4a35; }
-.graph-node:hover .node-circle.segment { fill: #1f3048; }
-.graph-node:hover .node-circle.input { fill: #2a2540; }
+/* Hover */
+.graph-node:hover .node-circle.company { fill: #163d26; }
+.graph-node:hover .node-circle.segment { fill: #132a40; }
+.graph-node:hover .node-circle.input   { fill: #1e1840; }
 
-.graph-node.highlighted .node-circle.company { stroke: #4ade80; stroke-width: 3; fill: #1f4a35; }
-.graph-node.highlighted .node-circle.segment { stroke: #93c5fd; stroke-width: 3; fill: #1f3048; }
-.graph-node.highlighted .node-circle.input { stroke: #c4b5fd; stroke-width: 2.5; fill: #2a2540; }
+/* Highlighted */
+.graph-node.highlighted .node-circle.company {
+  stroke: #4ade80;
+  stroke-width: 3.5;
+  fill: #163d26;
+  filter: drop-shadow(0 0 6px #4ade8055);
+}
+.graph-node.highlighted .node-circle.segment {
+  stroke: #93c5fd;
+  stroke-width: 3;
+  fill: #132a40;
+  filter: drop-shadow(0 0 5px #60a5fa44);
+}
+.graph-node.highlighted .node-circle.input {
+  stroke: #c4b5fd;
+  stroke-width: 2.5;
+  fill: #1e1840;
+  filter: drop-shadow(0 0 4px #9b87f544);
+}
 
 .node-label {
-  fill: #ccc;
-  font-size: 11px;
+  fill: #b0bec5;
+  font-size: 10px;
   font-family: 'DM Mono', monospace;
   pointer-events: none;
   user-select: none;
 }
 .node-revenue {
-  fill: #4ade8099;
-  font-size: 10px;
+  fill: #4ade8077;
+  font-size: 9px;
   font-family: 'DM Mono', monospace;
   pointer-events: none;
 }
 .node-tag {
   fill: #f59e0b;
-  font-size: 10px;
+  font-size: 9px;
   pointer-events: none;
 }
 
+/* Controls */
+.graph-controls {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ctrl-btn {
+  width: 28px;
+  height: 28px;
+  background: #0f1a2a;
+  border: 1px solid #1e2b40;
+  border-radius: 6px;
+  color: #60a5fa;
+  font-size: 0.9rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+.ctrl-btn:hover { background: #162336; }
+
+/* Legend */
 .graph-legend {
   position: absolute;
-  bottom: 1rem;
-  left: 1rem;
+  bottom: 0.75rem;
+  left: 0.75rem;
   display: flex;
   gap: 1rem;
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-family: 'DM Mono', monospace;
 }
-.legend-item { opacity: 0.5; }
-.legend-item.company { color: #4ade80; }
-.legend-item.segment { color: #60a5fa; }
-.legend-item.input { color: #a78bfa; }
+.legend-item { opacity: 0.45; }
+.legend-item.company       { color: #4ade80; }
+.legend-item.segment       { color: #60a5fa; }
+.legend-item.input         { color: #9b87f5; }
 .legend-item.commodity-tag { color: #f59e0b; }
 </style>
