@@ -9,6 +9,7 @@ const authRoutes = require('./routes/auth')
 const tradeRoutes = require('./routes/trades')
 const earningsRoutes = require('./routes/earnings')  
 const marketsRoutes = require('./routes/markets')  
+const regressionRoutes = require('./routes/factorRegression')  
 
 const app = express()
 
@@ -26,6 +27,7 @@ app.use('/api/auth', authRoutes)
 app.use('/api/trades', requireAuth, tradeRoutes)
 app.use('/api/earnings', requireAuth, earningsRoutes)
 app.use('/api/markets', requireAuth, marketsRoutes)
+app.use('/api/factor-regression', requireAuth, regressionRoutes)
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => {

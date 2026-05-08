@@ -41,6 +41,10 @@
           :class="['tab-toggle', { active: activePanel === 'global' }]"
           @click="activePanel = 'global'"
         >Global Impact</button>
+        <button
+        :class="['tab-toggle', { active: activePanel === 'factor' }]"
+        @click="activePanel = 'factor'"
+      >Factor Regression</button>
       </div>
     </div>
 
@@ -390,7 +394,204 @@
 
         </div>
       </template>
+      <!-- ── FACTOR REGRESSION VIEW ── -->
+<template v-if="activePanel === 'factor'">
+  <div class="factor-layout">
 
+    <!-- Left panel -->
+    <div class="factor-input-panel">
+      <h2 class="panel-title">Factor Regression</h2>
+      <p class="news-hint">
+        LASSO regression against ~65 FRED macro series to find which
+        economic factors statistically drive a stock's weekly returns.
+        No AI — pure econometrics.
+      </p>
+
+      <div class="field-group">
+        <label class="field-label">Ticker</label>
+        <div class="ticker-input-wrap">
+          <input
+            v-model="factorTicker"
+            class="ticker-input"
+            placeholder="e.g. AAPL"
+            @input="factorTicker = factorTicker.toUpperCase()"
+            @keyup.enter="runFactorRegression"
+            :disabled="factorRunning"
+          />
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Lookback period</label>
+        <div class="option-pills">
+          <button
+            v-for="y in [3, 5, 7, 10]"
+            :key="y"
+            :class="['option-pill', { active: factorLookback === y }]"
+            @click="factorLookback = y"
+          >{{ y }}Y</button>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Lags to test</label>
+        <div class="option-pills">
+          <button
+            v-for="l in factorLagOptions"
+            :key="l.value"
+            :class="['option-pill', 'toggle', { active: factorSelectedLags.includes(l.value) }]"
+            @click="toggleFactorLag(l.value)"
+          >{{ l.label }}</button>
+        </div>
+        <p class="news-hint" style="margin:0">LASSO picks the best lag per factor automatically.</p>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Top factors shown: <span style="color:#e0e0e0">{{ factorTopN }}</span></label>
+        <input type="range" v-model.number="factorTopN" min="5" max="20" class="range-input" />
+      </div>
+
+      <button
+        class="analyze-btn full-width"
+        @click="runFactorRegression"
+        :disabled="!factorTicker.trim() || factorRunning"
+      >
+        <span v-if="factorRunning" class="btn-spinner" />
+        <span v-else>Run Regression →</span>
+      </button>
+
+      <div v-if="factorError" class="error-msg">{{ factorError }}</div>
+
+      <template v-if="factorResult">
+        <div class="model-meta">
+          <div class="meta-row">
+            <span class="meta-key">R²</span>
+            <span class="meta-val" :class="factorR2Class">{{ (factorResult.r2_score * 100).toFixed(1) }}%</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-key">Adj. R²</span>
+            <span class="meta-val" :class="factorR2Class">{{ (factorResult.r2_adj * 100).toFixed(1) }}%</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-key">Observations</span>
+            <span class="meta-val">{{ factorResult.n_observations }} weeks</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-key">Non-zero factors</span>
+            <span class="meta-val">{{ factorResult.factors.length }}</span>
+          </div>
+        </div>
+        <p class="news-hint" style="font-style:italic;margin:0">{{ factorResult.model_note }}</p>
+      </template>
+    </div>
+
+    <!-- Right panel -->
+    <div class="factor-results-panel">
+
+      <!-- Empty state -->
+      <div v-if="!factorResult && !factorRunning" class="factor-empty">
+        <div class="empty-grid">
+          <div v-for="i in 12" :key="i" class="empty-bar" :style="{ height: factorEmptyBarHeight(i) }" />
+        </div>
+        <p>Enter a ticker and run regression to see which macro factors drive its returns.</p>
+        <div class="example-tickers">
+          <span class="example-label">Try:</span>
+          <button
+            v-for="t in ['AAPL','XOM','JPM','GLD','CAT']"
+            :key="t"
+            class="example-ticker"
+            @click="quickFactorRun(t)"
+          >{{ t }}</button>
+        </div>
+      </div>
+
+      <!-- Loading -->
+      <div v-else-if="factorRunning" class="factor-loading">
+        <div class="spinner-lg" />
+        <div class="loading-steps">
+          <p :class="['loading-step', { active: factorLoadStep >= 1 }]">Fetching {{ factorTicker }} price history from Yahoo Finance...</p>
+          <p :class="['loading-step', { active: factorLoadStep >= 2 }]">Pulling ~65 FRED macro series...</p>
+          <p :class="['loading-step', { active: factorLoadStep >= 3 }]">Building factor matrix with {{ factorSelectedLags.length }} lag windows...</p>
+          <p :class="['loading-step', { active: factorLoadStep >= 4 }]">Running LASSO with time-series cross-validation...</p>
+          <p :class="['loading-step', { active: factorLoadStep >= 5 }]">Ranking factor importance...</p>
+        </div>
+      </div>
+
+      <!-- Results -->
+      <template v-else-if="factorResult">
+
+        <div class="results-header">
+          <div>
+            <h2 class="results-title">{{ factorResult.company_name }}</h2>
+            <p class="news-hint" style="margin:0">Top macro drivers of weekly returns · LASSO regression</p>
+          </div>
+          <div class="r2-badge" :class="factorR2Class">
+            R² {{ (factorResult.r2_score * 100).toFixed(1) }}%
+          </div>
+        </div>
+
+        <div class="cat-filters">
+          <button
+            v-for="cat in factorAvailableCategories"
+            :key="cat"
+            :class="['cat-pill', { active: factorActiveCat === cat }]"
+            @click="factorActiveCat = factorActiveCat === cat ? null : cat"
+          >{{ cat }}</button>
+        </div>
+
+        <div class="factor-bars">
+          <div
+            v-for="(f, i) in factorFilteredFactors"
+            :key="f.series_id + f.lag_weeks"
+            class="factor-row"
+            :class="f.direction"
+            :style="{ '--delay': `${i * 40}ms` }"
+          >
+            <div class="factor-name-row">
+              <span class="factor-name">{{ f.name }}</span>
+              <span class="factor-lag">{{ f.lag_weeks }}W lag</span>
+              <span class="factor-cat-tag">{{ f.category }}</span>
+            </div>
+            <div class="factor-bar-wrap">
+              <div class="factor-bar" :class="f.direction" :style="{ width: factorBarWidth(f) }" />
+              <span class="factor-pct">{{ f.importance_pct }}%</span>
+              <span class="factor-coef" :class="f.direction">
+                {{ f.direction === 'positive' ? '+' : '' }}{{ f.coefficient.toFixed(4) }}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-section">
+          <h3 class="result-heading">Predicted vs Actual Weekly Returns</h3>
+          <div class="chart-wrap">
+            <svg :viewBox="`0 0 ${fcw} ${fch}`" class="return-chart" preserveAspectRatio="none">
+              <line :x1="fpad" :y1="factorZeroY" :x2="fcw - fpad" :y2="factorZeroY" stroke="#1e2535" stroke-width="1" />
+              <path :d="factorActualArea" fill="#4ade8012" stroke="none" />
+              <path :d="factorActualLine" fill="none" stroke="#4ade80" stroke-width="1.5" opacity="0.7" />
+              <path :d="factorPredictedLine" fill="none" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4 2" opacity="0.85" />
+              <text
+                v-for="tick in factorXTicks"
+                :key="tick.label"
+                :x="tick.x"
+                :y="fch - 2"
+                fill="#334155"
+                font-size="8"
+                text-anchor="middle"
+                font-family="DM Mono, monospace"
+              >{{ tick.label }}</text>
+            </svg>
+            <div class="chart-legend">
+              <span class="legend-actual">— Actual</span>
+              <span class="legend-pred">- - Predicted</span>
+            </div>
+          </div>
+        </div>
+
+      </template>
+    </div>
+  </div>
+</template>
     </div>
   </div>
 </template>
@@ -436,6 +637,167 @@ const filters = [
   { key: 'positive', label: 'Positive' },
   { key: 'indirect', label: 'Indirect (3+)' },
 ]
+
+
+// ── Factor Regression state ───────────────────────────────────────────────────
+const factorTicker       = ref('')
+const factorLookback     = ref(5)
+const factorTopN         = ref(12)
+const factorSelectedLags = ref([1, 2, 4])
+const factorRunning      = ref(false)
+const factorLoadStep     = ref(0)
+const factorError        = ref('')
+const factorResult       = ref(null)
+const factorActiveCat    = ref(null)
+
+const factorLagOptions = [
+  { label: '1W', value: 1 },
+  { label: '2W', value: 2 },
+  { label: '1M', value: 4 },
+  { label: '6W', value: 6 },
+  { label: '2M', value: 8 },
+]
+
+function toggleFactorLag(val) {
+  const idx = factorSelectedLags.value.indexOf(val)
+  if (idx === -1) factorSelectedLags.value.push(val)
+  else if (factorSelectedLags.value.length > 1) factorSelectedLags.value.splice(idx, 1)
+}
+
+const factorAvailableCategories = computed(() =>
+  factorResult.value ? [...new Set(factorResult.value.factors.map(f => f.category))] : []
+)
+
+const factorFilteredFactors = computed(() => {
+  if (!factorResult.value) return []
+  const all = factorResult.value.factors.slice(0, factorTopN.value)
+  return factorActiveCat.value ? all.filter(f => f.category === factorActiveCat.value) : all
+})
+
+const factorMaxImportance = computed(() =>
+  factorFilteredFactors.value.length
+    ? Math.max(...factorFilteredFactors.value.map(f => f.importance_pct))
+    : 1
+)
+
+function factorBarWidth(f) {
+  return `${(f.importance_pct / factorMaxImportance.value) * 100}%`
+}
+
+const factorR2Class = computed(() => {
+  if (!factorResult.value) return ''
+  const r = factorResult.value.r2_score
+  return r >= 0.3 ? 'r2-good' : r >= 0.1 ? 'r2-ok' : 'r2-low'
+})
+
+async function runFactorRegression() {
+  if (!factorTicker.value.trim() || factorRunning.value) return
+  factorRunning.value  = true
+  factorError.value    = ''
+  factorResult.value   = null
+  factorLoadStep.value = 0
+  factorActiveCat.value = null
+
+  const stepTimer = setInterval(() => {
+    if (factorLoadStep.value < 5) factorLoadStep.value++
+  }, 1800)
+
+  try {
+    const token = localStorage.getItem('token')
+    const res = await fetch(`${API}/factor-regression`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      body: JSON.stringify({
+        ticker:         factorTicker.value.trim(),
+        lookback_years: factorLookback.value,
+        top_n_factors:  factorTopN.value,
+        lag_weeks:      [...factorSelectedLags.value].sort((a, b) => a - b),
+      }),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.detail || data.error || 'Regression failed')
+    factorResult.value = data
+  } catch (e) {
+    factorError.value = e.message
+  } finally {
+    clearInterval(stepTimer)
+    factorRunning.value  = false
+    factorLoadStep.value = 0
+  }
+}
+
+async function quickFactorRun(t) {
+  factorTicker.value = t
+  await runFactorRegression()
+}
+
+// ── Factor chart math ─────────────────────────────────────────────────────────
+const fcw = 800, fch = 140, fpad = 30
+
+const factorChartData = computed(() => factorResult.value?.predicted_vs_actual ?? [])
+
+function makeFactorLinePath(key) {
+  const data = factorChartData.value
+  if (!data.length) return ''
+  const vals = data.flatMap(d => [d.actual, d.predicted])
+  const mn = Math.min(...vals), mx = Math.max(...vals)
+  const range = mx - mn || 1
+  const xStep = (fcw - fpad * 2) / (data.length - 1)
+  return data.map((d, i) => {
+    const x = fpad + i * xStep
+    const y = fpad + ((mx - d[key]) / range) * (fch - fpad * 2)
+    return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`
+  }).join(' ')
+}
+
+function makeFactorAreaPath() {
+  const data = factorChartData.value
+  if (!data.length) return ''
+  const vals = data.flatMap(d => [d.actual, d.predicted])
+  const mn = Math.min(...vals), mx = Math.max(...vals)
+  const range = mx - mn || 1
+  const xStep = (fcw - fpad * 2) / (data.length - 1)
+  const zeroY = fpad + (mx / range) * (fch - fpad * 2)
+  const top = data.map((d, i) => {
+    const x = fpad + i * xStep
+    const y = fpad + ((mx - d.actual) / range) * (fch - fpad * 2)
+    return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`
+  }).join(' ')
+  const lastX = fpad + (data.length - 1) * xStep
+  return `${top} L${lastX},${zeroY.toFixed(1)} L${fpad},${zeroY.toFixed(1)} Z`
+}
+
+const factorActualLine    = computed(() => makeFactorLinePath('actual'))
+const factorPredictedLine = computed(() => makeFactorLinePath('predicted'))
+const factorActualArea    = computed(() => makeFactorAreaPath())
+
+const factorXTicks = computed(() => {
+  const data = factorChartData.value
+  if (data.length < 2) return []
+  const n = 6
+  const step = Math.floor((data.length - 1) / (n - 1))
+  const xStep = (fcw - fpad * 2) / (data.length - 1)
+  return Array.from({ length: n }, (_, i) => {
+    const idx = i * step
+    return { x: fpad + idx * xStep, label: data[idx]?.date?.slice(0, 7) ?? '' }
+  })
+})
+
+const factorZeroY = computed(() => {
+  const vals = factorChartData.value.flatMap(d => [d.actual, d.predicted])
+  if (!vals.length) return fch / 2
+  const mn = Math.min(...vals), mx = Math.max(...vals)
+  const range = mx - mn || 1
+  return fpad + (mx / range) * (fch - fpad * 2)
+})
+
+function factorEmptyBarHeight(i) {
+  const heights = [40, 65, 30, 80, 55, 90, 45, 70, 35, 60, 85, 50]
+  return `${heights[(i - 1) % heights.length]}%`
+}
 
 // ── Computed ──────────────────────────────────────────────────────────────────
 const filteredGlobalResults = computed(() => {
@@ -870,4 +1232,114 @@ function highlightNode(nodeId) {
 .loading-steps { display: flex; flex-direction: column; gap: 6px; }
 .loading-step  { font-size: 0.75rem; color: #334155; margin: 0; }
 .loading-step.active { color: #4ade8099; }
+
+
+/* ── Factor Regression tab ── */
+.factor-layout {
+  flex: 1; display: grid; grid-template-columns: 320px 1fr; overflow: hidden;
+}
+.factor-input-panel {
+  padding: 1.5rem; border-right: 1px solid #1e2535;
+  display: flex; flex-direction: column; gap: 1rem;
+  overflow-y: auto; background: #070b12;
+}
+.panel-title {
+  font-family: 'Syne', sans-serif; font-size: 1rem;
+  font-weight: 700; color: #e0e0e0; margin: 0;
+}
+.field-group  { display: flex; flex-direction: column; gap: 0.4rem; }
+.field-label  { font-size: 0.68rem; color: #445; text-transform: uppercase; letter-spacing: 0.08em; }
+.option-pills { display: flex; gap: 4px; flex-wrap: wrap; }
+.option-pill  {
+  padding: 3px 10px; border-radius: 5px; border: 1px solid #1e2535;
+  background: transparent; color: #445; font-size: 0.72rem;
+  font-family: 'DM Mono', monospace; cursor: pointer; transition: all 0.12s;
+}
+.option-pill.active        { background: #0f2240; border-color: #60a5fa; color: #60a5fa; }
+.option-pill.toggle.active { background: #0f2a1a; border-color: #4ade80; color: #4ade80; }
+.range-input  { width: 100%; accent-color: #60a5fa; cursor: pointer; }
+.model-meta   {
+  background: #0d1220; border: 1px solid #1e2535; border-radius: 8px;
+  padding: 0.75rem; display: flex; flex-direction: column; gap: 0.4rem;
+}
+.meta-row { display: flex; justify-content: space-between; align-items: center; }
+.meta-key { font-size: 0.7rem; color: #445; }
+.meta-val { font-size: 0.8rem; color: #e0e0e0; font-weight: 600; }
+.meta-val.r2-good { color: #4ade80; }
+.meta-val.r2-ok   { color: #f59e0b; }
+.meta-val.r2-low  { color: #94a3b8; }
+
+.factor-results-panel {
+  padding: 1.5rem; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 1.25rem;
+}
+.factor-empty {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1.25rem;
+}
+.empty-grid   { display: flex; align-items: flex-end; gap: 6px; height: 80px; opacity: 0.07; }
+.empty-bar    { width: 18px; background: #60a5fa; border-radius: 3px 3px 0 0; }
+.factor-loading {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 2rem;
+}
+.results-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+}
+.results-title {
+  font-family: 'Syne', sans-serif; font-size: 1.1rem;
+  font-weight: 700; color: #e0e0e0; margin: 0;
+}
+.r2-badge {
+  padding: 4px 12px; border-radius: 6px; font-size: 0.8rem; font-weight: 700;
+  font-family: 'DM Mono', monospace; background: #0d1220; border: 1px solid #1e2535; color: #94a3b8;
+}
+.r2-badge.r2-good { border-color: #15422a; color: #4ade80; background: #0a2015; }
+.r2-badge.r2-ok   { border-color: #3d2800; color: #f59e0b; background: #1c1400; }
+.cat-filters  { display: flex; gap: 5px; flex-wrap: wrap; }
+.cat-pill     {
+  padding: 2px 9px; border-radius: 5px; border: 1px solid #1e2535;
+  background: transparent; color: #445; font-size: 0.67rem;
+  font-family: 'DM Mono', monospace; cursor: pointer; transition: all 0.12s;
+}
+.cat-pill.active { background: #0f1a30; border-color: #60a5fa55; color: #7dd3fc; }
+.factor-bars  { display: flex; flex-direction: column; gap: 2px; }
+.factor-row   {
+  padding: 8px 10px; border-radius: 6px; border-left: 3px solid transparent;
+  background: #0a0f1a; animation: slideIn 0.3s ease both;
+  animation-delay: var(--delay, 0ms);
+}
+.factor-row.positive { border-left-color: #4ade8055; }
+.factor-row.negative { border-left-color: #e0525255; }
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.factor-name-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.factor-name     { font-size: 0.78rem; color: #b0c0d0; flex: 1; }
+.factor-lag      {
+  font-size: 0.62rem; padding: 1px 6px; border-radius: 3px;
+  background: #0f172a; color: #475569; border: 1px solid #1e2535;
+}
+.factor-cat-tag  {
+  font-size: 0.6rem; padding: 1px 5px; border-radius: 3px;
+  background: #120f22; color: #4a3f70; border: 1px solid #1e1835;
+}
+.factor-bar-wrap { display: flex; align-items: center; gap: 8px; height: 14px; }
+.factor-bar      { height: 6px; border-radius: 3px; transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1); min-width: 4px; }
+.factor-bar.positive { background: linear-gradient(90deg, #4ade8044, #4ade80); }
+.factor-bar.negative { background: linear-gradient(90deg, #e0525244, #e05252); }
+.factor-pct  { font-size: 0.68rem; color: #445; font-family: 'DM Mono', monospace; min-width: 36px; }
+.factor-coef { font-size: 0.68rem; font-family: 'DM Mono', monospace; margin-left: auto; }
+.factor-coef.positive { color: #4ade8077; }
+.factor-coef.negative { color: #e0525277; }
+.chart-section { display: flex; flex-direction: column; gap: 0.5rem; }
+.chart-wrap    { position: relative; }
+.return-chart  {
+  width: 100%; height: 140px; display: block;
+  background: #070b12; border: 1px solid #1e2535; border-radius: 8px;
+}
+.chart-legend  { display: flex; gap: 1rem; font-size: 0.65rem; font-family: 'DM Mono', monospace; margin-top: 4px; justify-content: flex-end; }
+.legend-actual { color: #4ade8077; }
+.legend-pred   { color: #f59e0b77; }
 </style>
