@@ -7,3 +7,4 @@ yfinance
 fredapi
 statsmodels
 scipy
+dotenv

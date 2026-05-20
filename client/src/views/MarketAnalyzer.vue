@@ -71,6 +71,7 @@
           />
           <NodePanel
             :node="selectedNode"
+            :tree="tree"
             :exposedCompanies="exposedCompanies[selectedNode?.id]"
             :loadingExposed="loadingExposed"
             @close="selectedNode = null"
@@ -109,26 +110,56 @@
             </div>
 
             <div class="result-section">
-              <h3 class="result-heading">Affected Supply Chain Nodes</h3>
-              <div class="affected-list">
-                <div
-                  v-for="n in newsResult.affectedNodes"
-                  :key="n.nodeId"
-                  class="affected-card"
-                  :class="n.impact"
-                  @click="highlightNode(n.nodeId)"
-                >
-                  <div class="affected-header">
-                    <span class="affected-name">{{ n.nodeName }}</span>
-                    <span class="affected-magnitude" :class="n.magnitude">{{ n.magnitude }}</span>
-                    <span class="affected-impact" :class="n.impact">
-                      {{ n.impact === 'positive' ? '▲' : n.impact === 'negative' ? '▼' : '–' }} {{ n.impact }}
-                    </span>
-                  </div>
-                  <p class="affected-reasoning">{{ n.reasoning }}</p>
+            <h3 class="result-heading">Affected Supply Chain Nodes</h3>
+            <div class="affected-list">
+              <div
+                v-for="n in newsResult.affectedNodes"
+                :key="n.nodeId"
+                class="affected-card"
+                :class="n.impact"
+                @click="highlightNode(n.nodeId)"
+              >
+                <!-- Header row -->
+                <div class="affected-header">
+                  <span class="affected-name">{{ n.nodeName }}</span>
+                  <span class="affected-magnitude" :class="n.magnitude">{{ n.magnitude }}</span>
+                  <span class="affected-impact" :class="n.impact">
+                    {{ n.impact === 'positive' ? '▲' : n.impact === 'negative' ? '▼' : '–' }} {{ n.impact }}
+                  </span>
                 </div>
+
+                <!-- Segment + revenue share pill -->
+                <div v-if="n.segmentName || n.segmentRevShare" class="affected-segment-row">
+                  <span class="seg-label">Segment</span>
+                  <span class="seg-name">{{ n.segmentName }}</span>
+                  <span v-if="n.segmentRevShare" class="seg-rev">{{ n.segmentRevShare }} of revenue</span>
+                </div>
+
+                <!-- Geographic risk -->
+                <div v-if="n.geographicRisk" class="affected-geo">
+                  <span class="geo-icon">⚑</span>
+                  <span class="geo-text">{{ n.geographicRisk }}</span>
+                </div>
+
+                <!-- Quantified exposure detail -->
+                <p v-if="n.exposureDetail" class="affected-exposure-detail">{{ n.exposureDetail }}</p>
+
+                <!-- Causal chain -->
+                <div v-if="n.causalChain" class="causal-chain">
+                  <span class="chain-label">causal chain</span>
+                  <span class="chain-text">{{ n.causalChain }}</span>
+                </div>
+
+                <!-- Related tickers -->
+                <div v-if="n.relatedTickers?.length" class="affected-tickers">
+                  <span v-for="t in n.relatedTickers" :key="t" class="related-ticker">{{ t }}</span>
+                </div>
+
+                <!-- General reasoning (collapsible feel via smaller muted text) -->
+                <p class="affected-reasoning">{{ n.reasoning }}</p>
               </div>
             </div>
+          </div>
 
             <div class="result-section" v-if="newsResult.historicalAnalogs?.length">
               <h3 class="result-heading">Historical Analogs</h3>
@@ -151,6 +182,7 @@
                   <div class="watch-left">
                     <span class="watch-ticker">{{ w.ticker }}</span>
                     <span class="watch-name">{{ w.name }}</span>
+                    <p v-if="w.exposureSummary" class="watch-exposure">{{ w.exposureSummary }}</p>
                   </div>
                   <span class="watch-action" :class="w.action">{{ w.action }}</span>
                   <p class="watch-reasoning">{{ w.reasoning }}</p>
@@ -892,6 +924,7 @@ async function loadCompany() {
   try {
     loadingStage.value = 'Checking cache / fetching 10-K from SEC...'
     const result = await getOrBuildTree(tickerInput.value)
+    ensureTreeIds(result.tree)
     tree.value = result.tree        // getOrBuildTree returns { source, tree, filingDate, companyName }
     loadingStage.value = ''
   } catch (e) {
@@ -931,6 +964,16 @@ function getAncestorIds(root, targetId, path = []) {
   return null
 }
 
+function ensureTreeIds(root) {
+  let counter = 0
+  function assign(node) {
+    if (!node) return
+    if (!node.id) node.id = `node_${counter++}`
+    for (const child of node.children || []) assign(child)
+  }
+  assign(root)
+}
+
 async function loadExposed(node) {
   loadingExposed.value = true
   try {
@@ -965,6 +1008,60 @@ function highlightNode(nodeId) {
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Syne:wght@400;600;700;800&display=swap');
 
 /* ── All your existing styles (unchanged) ── */
+/* ── Enhanced News Analysis node cards ── */
+.affected-segment-row {
+  display: flex; align-items: center; gap: 6px;
+  margin: 4px 0 2px; flex-wrap: wrap;
+}
+.seg-label {
+  font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.08em;
+  color: #334155; padding: 1px 5px; border-radius: 3px;
+  border: 1px solid #1e2535; background: #070b12;
+}
+.seg-name { font-size: 0.75rem; color: #7dd3fc; font-weight: 500; }
+.seg-rev  {
+  font-size: 0.7rem; color: #f59e0b; font-weight: 600;
+  background: #78350f22; border: 1px solid #78350f55;
+  padding: 1px 6px; border-radius: 4px;
+}
+
+.affected-geo {
+  display: flex; align-items: center; gap: 5px;
+  margin: 4px 0; font-size: 0.72rem;
+}
+.geo-icon { color: #fb923c; font-size: 0.7rem; }
+.geo-text { color: #fb923c; }
+
+.affected-exposure-detail {
+  font-size: 0.78rem; color: #94a3b8; line-height: 1.6;
+  margin: 5px 0 0; padding: 6px 8px;
+  background: #0a0f1a; border-radius: 4px;
+  border-left: 2px solid #334155;
+}
+
+.causal-chain {
+  display: flex; flex-direction: column; gap: 2px;
+  margin: 6px 0 0; padding: 6px 8px;
+  background: #070b12; border-radius: 4px;
+  border: 1px solid #1e2535;
+}
+.chain-label {
+  font-size: 0.58rem; text-transform: uppercase; letter-spacing: 0.1em; color: #334155;
+}
+.chain-text { font-size: 0.74rem; color: #64748b; line-height: 1.6; font-style: italic; }
+
+.affected-tickers { display: flex; gap: 4px; flex-wrap: wrap; margin: 5px 0 0; }
+.related-ticker {
+  font-size: 0.65rem; padding: 1px 7px; border-radius: 3px;
+  background: #0f2240; color: #60a5fa; border: 1px solid #1e3a5f;
+  font-family: 'DM Mono', monospace;
+}
+
+.watch-exposure {
+  grid-column: 1 / -1; font-size: 0.72rem; color: #f59e0b;
+  margin: 2px 0 0; font-weight: 500;
+}
+
 .analyzer-page {
   display: flex; flex-direction: column; height: 100vh;
   background: #060a10; color: #e0e0e0;

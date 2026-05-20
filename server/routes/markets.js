@@ -393,16 +393,101 @@ Include 5-8 companies. Return ONLY JSON.`
 // ---------------------------------------------------------------------------
 
 function summarizeTree(node, depth = 0) {
-  if (depth > 3) return null
+  if (depth > 5) return null   // was 3 — go deeper so revenue shares & geo risk reach the prompt
   return {
-    id: node.id,
-    name: node.name,
-    type: node.type,
+    id:             node.id,
+    name:           node.name,
+    type:           node.type,
+    revenueShare:   node.revenueShare   || null,
+    geographicRisk: node.geographicRisk || null,
+    commodity:      node.commodity      || false,
+    description:    node.description   || null,
+    relatedTickers: node.relatedTickers || [],
     children: (node.children || [])
       .map(c => summarizeTree(c, depth + 1))
       .filter(Boolean),
   }
 }
+
+router.post('/analyze-news', async (req, res) => {
+  try {
+    const { articleText, tree } = req.body
+    if (!articleText || !tree) {
+      return res.status(400).json({ error: 'articleText and tree are required' })
+    }
+
+    const systemPrompt = `You are a senior equity analyst specialising in supply chain risk.
+Your job is to trace the precise financial and operational pathways through which a company 
+is exposed to the events in a news article — citing specific revenue percentages, segment 
+names, geographic concentrations, and supplier dependencies from the supply chain tree.
+Be quantitative and specific. Respond ONLY with valid JSON.`
+
+    const userPrompt = `Analyse this news article against the supply chain dependency tree provided.
+
+For every affected node, you MUST:
+1. State the EXACT revenue segment it belongs to and its revenueShare % (e.g. "Advisory Services — 34% of revenue")
+2. Quantify or estimate the exposure magnitude using the tree's own data
+3. Cite geographicRisk where present (e.g. "China — 65% of APAC lease revenue")
+4. Explain the CAUSAL CHAIN from the news event to the bottom-line impact
+5. Reference related tickers at that node if any
+
+ARTICLE:
+${articleText}
+
+DEPENDENCY TREE (includes revenueShare, geographicRisk, commodity flags, descriptions):
+${JSON.stringify(summarizeTree(tree), null, 2)}
+
+Return this exact JSON shape:
+{
+  "summary": "2-3 sentence summary of the core event and its direct market effect",
+  "affectedNodes": [
+    {
+      "nodeId": "id from tree",
+      "nodeName": "name from tree",
+      "segmentName": "parent segment name from tree",
+      "segmentRevShare": "e.g. 34% — pulled from tree revenueShare field",
+      "impact": "positive|negative|neutral",
+      "magnitude": "high|medium|low",
+      "geographicRisk": "copied from node if present, else null",
+      "exposureDetail": "1-2 sentences with SPECIFIC numbers: e.g. 'China accounts for ~18% of CBRE's APAC leasing volume; a 10% contraction would reduce that segment's revenue by ~$X'",
+      "causalChain": "News event → intermediate mechanism → effect on this node → P&L impact",
+      "relatedTickers": [],
+      "reasoning": "overall reasoning paragraph"
+    }
+  ],
+  "historicalAnalogs": [
+    {
+      "event": "name of historical analog",
+      "year": 2008,
+      "outcome": "what happened to the stock/sector — include % moves where known",
+      "relevance": "why this is analogous to the current situation"
+    }
+  ],
+  "watchlist": [
+    {
+      "ticker": "ABC",
+      "name": "Company Name",
+      "action": "monitor|buy-signal|sell-signal",
+      "exposureSummary": "one line with the key quantitative hook",
+      "reasoning": "why"
+    }
+  ]
+}
+
+Return ONLY the JSON object.`
+
+    const raw = await groqChat([
+      { role: 'system', content: systemPrompt },
+      { role: 'user',   content: userPrompt },
+    ], { maxTokens: 3000 })   // bumped from 2048
+
+    const result = parseGroqJson(raw)
+    res.json(result)
+  } catch (err) {
+    console.error('[analyze-news]', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
 
 router.post('/analyze-news', async (req, res) => {
   try {
